@@ -11,18 +11,61 @@ No Alpine. Small client behaviours are custom elements: they survive htmx swaps 
 `#[component]` attribute macro, re-exported from `bq_components`.
 
 ## /bq_components
-Shared UI components. Each component is one folder with `mod.rs` and its colocated `.css` (and `.ts` when needed).
+Shared UI components. Each component is one folder with `mod.rs` and its colocated `.css` and `.ts`. Files with a `_` prefix are private helpers, not entry points. Scripts self-register on load (event delegation on `document`, or `customElements.define`); nothing needs to be called.
 
-The CSS is the crossword.blue button and input, moved as-is. It reads these variables, which a site must define in `:root`:
+| Folder | Contents |
+|---|---|
+| `base/` | Behaviour CSS the Rust components rely on: `.error:empty`, `[aria-busy]`, `.htmx-request`, `.sr-only` |
+| `button/` | `Button` and `.button` look: `.primary`, `.secondary`, `.danger`, `.ghost`, `.small` |
+| `input/` | `Input` and `.input-component` look, password toggle |
+| `behaviours/` | Delegated handlers: `[data-copy]`, `[data-share]`, `[data-copied]`, `input[data-select-all]`, `[data-open]`, `textarea[data-submit-on-enter]` |
+| `autosave/` | `form[data-autosave]` dirty tracking, `a[data-leave]` flush-then-navigate, `beforeunload` guard |
 
-- `--color-surface`, `--color-text`, `--color-border`
-- `--color-1`, `--color-on-brand`
-- `--color-contrast`, `--color-on-contrast`
-- `--color-focus`, `--color-secondary-active`, `--color-wrong`
+### Palette contract
 
-Target role set (not yet applied): `--color-surface`, `--color-text`, `--color-border`, `--color-primary`, `--color-error`, `--color-muted`, `--color-surface-muted`, `--font-body`.
+Component CSS reads only these roles. A site defines them in `:root`:
 
-To bundle the CSS, add an alias in `vite.config.ts` that points at `bq_components/src`, then glob `**/*.css` from the site entry.
+| Role | Purpose |
+|---|---|
+| `--color-surface` | page and control background |
+| `--color-text` | body text |
+| `--color-border` | control borders |
+| `--color-primary` | brand accent, focus rings |
+| `--color-error` | validation and danger |
+| `--color-muted` | secondary text |
+| `--color-surface-muted` | hover fills, subtle backgrounds |
+| `--font-body` | body font stack |
+
+Recommended shape for a site stylesheet, so user themes can override a few material tokens:
+
+```css
+:root {
+    --ink: #000;
+    --paper: #fff;
+    --brand: #92ca3a;
+    --font-body: "Times", serif;
+    --font-title: "Playfair Display", serif;
+
+    --color-surface: var(--paper);
+    --color-text: var(--ink);
+    --color-border: var(--ink);
+    --color-primary: var(--brand);
+    --color-error: #af1d27;
+    --color-muted: color-mix(in srgb, var(--ink) 33%, var(--paper));
+    --color-surface-muted: color-mix(in srgb, var(--ink) 7%, var(--paper));
+}
+```
+
+Named themes are `[data-theme="name"]` blocks that override only what differs. `Head::theme(name)` renders the attribute on `<html>`.
+
+### Bundling
+
+In `vite.config.ts` alias `@bq` to `bq_components/src`, then from the site entry:
+
+```ts
+import.meta.glob("@bq/**/*.css", { eager: true });
+import.meta.glob(["@bq/**/*.ts", "!@bq/**/_*.ts"], { eager: true });
+```
 
 ## Consuming from a site
 
