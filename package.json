@@ -3,5 +3,5 @@
     "version": "0.2.0",
     "private": true,
     "type": "module",
-    "description": "Shared component CSS and TypeScript for boutique sites. Alias `@bq` to `bq_components/src` in Vite and glob it."
+    "description": "Shared component CSS and TypeScript for boutique sites."
 }

@@ -7,13 +7,17 @@ Server, auth, session, htmx helpers, `AppError`, and page head. Pure Rust. Ships
 
 No Alpine. Small client behaviours are custom elements: they survive htmx swaps and morphs with no compat layer. Use `hx-morph-skip` on elements that own their inner DOM.
 
-## /bq_macros
+## /macros (`bq_macros`)
 `#[component]` attribute macro, re-exported from `bq_components`.
 
-## /bq_style
-Plain CSS, no crate. `reset.css` (Tailwind preflight, body font from `--font-body`) and `tokens.css` (width tokens `--xs` to `--xl`). Import these first, before component CSS.
+## /style
+Plain CSS, no crate. Import these first, before component CSS:
 
-## /bq_components
+- `reset.css`: Tailwind preflight, body font from `--font-body`
+- `tokens.css`: width tokens `--xs` to `--xl`
+- `roles.css`: the palette contract as `:root` defaults. A site overrides the material tokens (`--ink`, `--paper`, `--brand`, `--font-body`, `--font-title`) or any role in its own `:root`, loaded after this file.
+
+## /components (`bq_components`)
 Shared UI components. Each component is one folder with `mod.rs` and its colocated `.css` and `.ts`. Files with a `_` prefix are private helpers, not entry points. Scripts self-register on load (event delegation on `document`, or `customElements.define`); nothing needs to be called.
 
 | Folder | Contents |
@@ -66,10 +70,11 @@ Named themes are `[data-theme="name"]` blocks that override only what differs. `
 In `vite.config.ts` alias `@bq` to the boutique repository root (a sibling checkout, or `node_modules/boutique`), then from the site entry:
 
 ```ts
-import "@bq/bq_style/reset.css";
-import "@bq/bq_style/tokens.css";
-import.meta.glob("@bq/bq_components/src/**/*.css", { eager: true });
-import.meta.glob(["@bq/bq_components/src/**/*.ts", "!@bq/bq_components/src/**/_*.ts"], { eager: true });
+import "@bq/style/reset.css";
+import "@bq/style/tokens.css";
+import "@bq/style/roles.css";
+import.meta.glob("@bq/components/src/**/*.css", { eager: true });
+import.meta.glob(["@bq/components/src/**/*.ts", "!@bq/components/src/**/_*.ts"], { eager: true });
 ```
 
 ## Consuming from a site
@@ -80,7 +85,7 @@ For local work, add a `.cargo/config.toml` (gitignored) in the site workspace:
 ```toml
 [patch."https://github.com/avavuvu/boutique.git"]
 boutique = { path = "../boutique/boutique" }
-bq_components = { path = "../boutique/bq_components" }
+bq_components = { path = "../boutique/components" }
 ```
 
 JavaScript: add `"boutique": "github:avavuvu/boutique#<same rev>"` to `devDependencies`. The Vite alias can prefer a local sibling checkout when present and fall back to `node_modules/boutique`.
