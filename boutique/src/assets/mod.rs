@@ -1,3 +1,5 @@
+pub mod manifest;
+
 use axum::{
     Router,
     http::header,
@@ -21,7 +23,7 @@ fn script(body: &'static str) -> impl IntoResponse {
 
 pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
-        .route(HTMX_PATH, get(|| async { script(include_str!("../assets/htmx.js")) }))
-        .route(ALPINE_PATH, get(|| async { script(include_str!("../assets/hx-alpine-compat.js")) }))
-        .route(ISLANDS_PATH, get(|| async { script(include_str!("../assets/islands.js")) }))
+        .route(HTMX_PATH, get(|| async { script(include_str!("../../assets/htmx.js")) }))
+        .route(ALPINE_PATH, get(|| async { script(include_str!("../../assets/hx-alpine-compat.js")) }))
+        .route(ISLANDS_PATH, get(|| async { script(include_str!("../../assets/islands.js")) }))
 }

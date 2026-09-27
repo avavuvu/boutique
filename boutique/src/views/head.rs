@@ -54,6 +54,25 @@ impl Head {
         self
     }
 
+    /// a vite entry by manifest name: its script plus any css it imports
+    pub fn entry(mut self, name: &str) -> Self {
+        for href in assets::manifest::styles(name) {
+            self = self.stylesheet(href);
+        }
+        match assets::manifest::url(name) {
+            Some(src) => self.module(src),
+            None => self,
+        }
+    }
+
+    /// a css-only vite entry by manifest name
+    pub fn css(self, name: &str) -> Self {
+        match assets::manifest::url(name) {
+            Some(href) => self.stylesheet(href),
+            None => self,
+        }
+    }
+
     pub fn favicon(mut self, href: impl Into<String>) -> Self {
         self.favicon = Some(href.into());
         self

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["boutique", "bq_components"]
+members = ["boutique", "bq_components", "bq_macros"]
 
 [workspace.package]
 version = "0.2.0"
