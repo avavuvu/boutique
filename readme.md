@@ -10,6 +10,9 @@ No Alpine. Small client behaviours are custom elements: they survive htmx swaps 
 ## /bq_macros
 `#[component]` attribute macro, re-exported from `bq_components`.
 
+## /bq_style
+Plain CSS, no crate. `reset.css` (Tailwind preflight, body font from `--font-body`) and `tokens.css` (width tokens `--xs` to `--xl`). Import these first, before component CSS.
+
 ## /bq_components
 Shared UI components. Each component is one folder with `mod.rs` and its colocated `.css` and `.ts`. Files with a `_` prefix are private helpers, not entry points. Scripts self-register on load (event delegation on `document`, or `customElements.define`); nothing needs to be called.
 
@@ -60,11 +63,13 @@ Named themes are `[data-theme="name"]` blocks that override only what differs. `
 
 ### Bundling
 
-In `vite.config.ts` alias `@bq` to `bq_components/src`, then from the site entry:
+In `vite.config.ts` alias `@bq` to the boutique repository root (a sibling checkout, or `node_modules/boutique`), then from the site entry:
 
 ```ts
-import.meta.glob("@bq/**/*.css", { eager: true });
-import.meta.glob(["@bq/**/*.ts", "!@bq/**/_*.ts"], { eager: true });
+import "@bq/bq_style/reset.css";
+import "@bq/bq_style/tokens.css";
+import.meta.glob("@bq/bq_components/src/**/*.css", { eager: true });
+import.meta.glob(["@bq/bq_components/src/**/*.ts", "!@bq/bq_components/src/**/_*.ts"], { eager: true });
 ```
 
 ## Consuming from a site
