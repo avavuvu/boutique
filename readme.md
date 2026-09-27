@@ -3,7 +3,9 @@
 Libraries for server-rendered Rust web sites built on axum, maud and htmx.
 
 ## /boutique
-Server, auth, session, htmx helpers and page head. Pure Rust. Ships `htmx.js`, `islands.js` and `hx-alpine-compat.js` from the binary.
+Server, auth, session, htmx helpers, `AppError`, and page head. Pure Rust. Ships `htmx.js` and `islands.js` from the binary.
+
+No Alpine. Small client behaviours are custom elements: they survive htmx swaps and morphs with no compat layer. Use `hx-morph-skip` on elements that own their inner DOM.
 
 ## /bq_macros
 `#[component]` attribute macro, re-exported from `bq_components`.

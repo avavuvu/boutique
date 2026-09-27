@@ -9,7 +9,6 @@ pub struct Head {
     pub metadata: Option<Metadata>,
     pub class: Option<String>,
     pub theme: Option<String>,
-    alpine_entry: String,
     islands_entry: String,
 }
 
@@ -24,18 +23,12 @@ impl Head {
             metadata: None,
             class: None,
             theme: None,
-            alpine_entry: "/assets/alpine.js".into(),
             islands_entry: "/assets/islands.js".into(),
         }
     }
 
     pub fn preload_font(mut self, href: impl Into<String>) -> Self {
         self.preloads.push((href.into(), "font/woff2"));
-        self
-    }
-
-    pub fn alpine_entry(mut self, src: impl Into<String>) -> Self {
-        self.alpine_entry = src.into();
         self
     }
 
@@ -80,12 +73,6 @@ impl Head {
 
     pub fn htmx(self) -> Self {
         self.module(assets::HTMX_PATH)
-    }
-
-    /// the compat extension must load after htmx and before alpine
-    pub fn alpine(self) -> Self {
-        let entry = self.alpine_entry.clone();
-        self.module(assets::ALPINE_PATH).module(entry)
     }
 
     /// the loader must come before the app entry that calls `mountIslands`
