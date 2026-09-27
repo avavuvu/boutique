@@ -1,0 +1,27 @@
+[package]
+name = "boutique"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+migration = ["dep:sea-orm-migration"]
+devtools = ["dep:dioxus-devtools"]
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["net"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "set-header"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+sea-orm-migration = { version = "1", optional = true, default-features = false }
+dioxus-devtools = { version = "0.7.3", optional = true, features = ["serve"] }
+serde = { version = "1", features = ["derive"] }
+argon2 = "0.5"
+jsonwebtoken = "9"
+chrono = "0.4"
+time = "0.3"
+uuid = { version = "1", features = ["v4"] }
+maud = { version = "0.27", features = ["axum"] }
+validator = { version = "0.20", features = ["derive"] }

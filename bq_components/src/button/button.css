@@ -1,0 +1,89 @@
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    padding: 0.5em 1em;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+    font-weight: bold;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.1s ease-out;
+
+    &:hover {
+        background-color: var(--color-secondary-active);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--color-focus);
+        outline-offset: 2px;
+    }
+
+    &:disabled,
+    &[aria-disabled="true"] {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    &.htmx-request {
+        cursor: progress;
+        opacity: 0.7;
+    }
+
+    &.primary {
+        background-color: var(--color-contrast);
+        border-color: var(--color-border);
+        color: var(--color-on-contrast);
+
+        &:hover {
+            background-color: var(--color-1);
+            border-color: var(--color-1);
+            color: var(--color-on-brand);
+        }
+    }
+
+    &.secondary {
+        background-color: var(--color-secondary-active);
+        border-color: transparent;
+
+        &:hover {
+            background-color: var(--color-1);
+            color: var(--color-on-brand);
+        }
+    }
+
+    &.danger {
+        border-color: var(--color-wrong);
+        color: var(--color-wrong);
+
+        &:hover {
+            background-color: var(--color-wrong);
+            color: var(--color-on-brand);
+        }
+    }
+
+    &.ghost {
+        border-color: transparent;
+        background: none;
+        font-weight: normal;
+
+        &:hover {
+            background-color: color-mix(in srgb, var(--color-text) 8%, transparent);
+        }
+    }
+
+    &.small {
+        padding: 0.25em 0.625em;
+        font-size: 0.875em;
+    }
+}
+
+.button-form {
+    display: inline;
+}
