@@ -1,24 +1,19 @@
-use std::marker::PhantomData;
-
-use sea_orm::DatabaseConnection;
-
-use crate::{config::AuthConfig, models::user, store::AuthUser};
+use crate::{config::AuthConfig, store::AuthUser};
 
 #[derive(Clone)]
-pub struct AuthState<U: AuthUser = user::Model> {
-    pub db: DatabaseConnection,
-    pub jwt_secret: String,
+pub struct AuthState<U: AuthUser> {
+    pub store: U::Store,
+    pub secret: String,
     pub config: AuthConfig,
-    _user: PhantomData<U>,
 }
 
 impl<U: AuthUser> AuthState<U> {
-    pub fn new(db: DatabaseConnection, jwt_secret: impl Into<String>) -> Self {
-        Self { db, jwt_secret: jwt_secret.into(), config: AuthConfig::default(), _user: PhantomData }
+    pub fn new(store: U::Store, secret: impl Into<String>) -> Self {
+        Self { store, secret: secret.into(), config: AuthConfig::default() }
     }
 
-    pub fn with_config(db: DatabaseConnection, jwt_secret: impl Into<String>, config: AuthConfig) -> Self {
-        Self::new(db, jwt_secret).config(config)
+    pub fn with_config(store: U::Store, secret: impl Into<String>, config: AuthConfig) -> Self {
+        Self::new(store, secret).config(config)
     }
 
     pub fn config(mut self, config: AuthConfig) -> Self {
@@ -27,6 +22,6 @@ impl<U: AuthUser> AuthState<U> {
     }
 
     pub fn secret(&self) -> &[u8] {
-        self.jwt_secret.as_bytes()
+        self.secret.as_bytes()
     }
 }

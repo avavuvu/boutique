@@ -1,66 +1,62 @@
-use sea_orm::{
-    ActiveModelBehavior, ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    FromQueryResult, IntoActiveModel, ModelTrait, QueryFilter,
-};
+use std::{fmt, future::Future};
 
-use crate::models::user;
+use chrono::{DateTime, Utc};
 
-/// implemented on the app's user `Model`. boutique derives every query it
-/// needs from the entity and the three column names.
-pub trait AuthUser:
-    ModelTrait<Entity = Self::UserEntity>
-    + FromQueryResult
-    + IntoActiveModel<Self::Active>
-    + Clone
-    + Send
-    + Sync
-    + 'static
-{
-    type UserEntity: EntityTrait<Model = Self, Column = Self::UserColumn>;
-    type UserColumn: ColumnTrait;
-    type Active: ActiveModelTrait<Entity = Self::UserEntity> + ActiveModelBehavior + Send;
-
-    const ID: Self::UserColumn;
-    const EMAIL: Self::UserColumn;
-    const PASSWORD: Self::UserColumn;
+pub trait AuthUser: Clone + Send + Sync + 'static {
+    type Store: AuthStore<Self>;
 
     fn id(&self) -> &str;
     fn email(&self) -> &str;
     fn password_hash(&self) -> &str;
 }
 
-pub(crate) async fn find_by_id<U: AuthUser>(db: &DatabaseConnection, id: &str) -> Result<Option<U>, DbErr> {
-    U::UserEntity::find().filter(U::ID.eq(id)).one(db).await
+pub struct NewSession {
+    pub token_hash: String,
+    pub user_id: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
 }
 
-pub(crate) async fn find_by_email<U: AuthUser>(db: &DatabaseConnection, email: &str) -> Result<Option<U>, DbErr> {
-    U::UserEntity::find().filter(U::EMAIL.eq(email)).one(db).await
+pub trait AuthStore<U>: Clone + Send + Sync + 'static {
+    type Error: fmt::Debug + Send;
+
+    fn find_user_by_email(&self, email: &str) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+
+    fn find_user_by_id(&self, id: &str) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+
+    fn create_session(&self, session: NewSession) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn find_session_user(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+
+    fn delete_session(&self, token_hash: &str) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn delete_user_sessions(&self, user_id: &str) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn delete_expired_sessions(&self, now: DateTime<Utc>) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    fn reset_password(&self, user: U, password_hash: String) -> impl Future<Output = Result<U, Self::Error>> + Send;
 }
 
-pub(crate) async fn set_password_hash<U: AuthUser>(db: &DatabaseConnection, user: U, hash: String) -> Result<U, DbErr> {
-    let mut active = user.into_active_model();
-    active.set(U::PASSWORD, hash.into());
-    active.update(db).await
-}
+pub struct StoreError(String);
 
-impl AuthUser for user::Model {
-    type UserEntity = user::Entity;
-    type UserColumn = user::Column;
-    type Active = user::ActiveModel;
-
-    const ID: user::Column = user::Column::Id;
-    const EMAIL: user::Column = user::Column::Email;
-    const PASSWORD: user::Column = user::Column::Password;
-
-    fn id(&self) -> &str {
-        &self.id
+impl StoreError {
+    pub(crate) fn from_debug<E: fmt::Debug>(error: E) -> Self {
+        StoreError(format!("{error:?}"))
     }
+}
 
-    fn email(&self) -> &str {
-        &self.email
+impl fmt::Debug for StoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
     }
+}
 
-    fn password_hash(&self) -> &str {
-        &self.password
+impl fmt::Display for StoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }

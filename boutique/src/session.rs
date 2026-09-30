@@ -1,52 +1,24 @@
+use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::response::{IntoResponseParts, ResponseParts};
 pub use axum_extra::extract::cookie::CookieJar;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DbErr, EntityTrait, QueryFilter};
+use chrono::Utc;
+use sha2::{Digest, Sha256};
 
 use crate::{
-    cookies, jwt,
-    models::{refresh_token::{self, Entity as RefreshToken}, user},
-    password,
+    cookies, password,
     state::AuthState,
-    store::{self, AuthUser},
+    store::{AuthStore, AuthUser, NewSession, StoreError},
 };
 
 #[derive(Debug)]
 pub enum LoginError {
     InvalidCredentials,
-    Database(DbErr),
-    Token(jsonwebtoken::errors::Error),
+    Store(StoreError),
 }
 
-impl From<DbErr> for LoginError {
-    fn from(e: DbErr) -> Self {
-        LoginError::Database(e)
-    }
-}
-
-#[derive(Debug)]
-pub enum SessionError {
-    Token(jsonwebtoken::errors::Error),
-    Database(DbErr),
-}
-
-impl From<jsonwebtoken::errors::Error> for SessionError {
-    fn from(e: jsonwebtoken::errors::Error) -> Self {
-        SessionError::Token(e)
-    }
-}
-
-impl From<DbErr> for SessionError {
-    fn from(e: DbErr) -> Self {
-        SessionError::Database(e)
-    }
-}
-
-impl From<SessionError> for LoginError {
-    fn from(e: SessionError) -> Self {
-        match e {
-            SessionError::Database(e) => LoginError::Database(e),
-            SessionError::Token(e) => LoginError::Token(e),
-        }
+impl From<StoreError> for LoginError {
+    fn from(e: StoreError) -> Self {
+        LoginError::Store(e)
     }
 }
 
@@ -68,7 +40,7 @@ pub async fn login<U: AuthUser>(state: &AuthState<U>, email: &str, plain_passwor
 }
 
 pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_password: &str) -> Result<U, LoginError> {
-    let user = store::find_by_email::<U>(&state.db, email).await?;
+    let user = state.store.find_user_by_email(email).await.map_err(StoreError::from_debug)?;
 
     match user {
         Some(user) if password::verify(plain_password, user.password_hash()) => Ok(user),
@@ -76,46 +48,42 @@ pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_
     }
 }
 
-/// an unsaved row for boutique's default `users` table
-pub fn new_user(email: &str, plain_password: &str) -> Result<user::ActiveModel, argon2::password_hash::Error> {
-    Ok(user::ActiveModel {
-        id: Set(uuid::Uuid::new_v4().to_string()),
-        email: Set(email.to_string()),
-        password: Set(password::hash(plain_password)?),
-        created_at: Set(chrono::Utc::now().into()),
-        ..Default::default()
-    })
-}
+pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Session, StoreError> {
+    let now = Utc::now();
+    state.store.delete_expired_sessions(now).await.map_err(StoreError::from_debug)?;
 
-pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Session, SessionError> {
-    let claims = jwt::Claims::new(user.id(), user.email(), state.config.jwt_ttl_hours);
-    let jwt_token = jwt::generate(state.secret(), &claims)?;
+    let token = new_token();
+    let ttl = state.config.session_ttl_hours;
+    let session = NewSession {
+        token_hash: hash(&token),
+        user_id: user.id().to_string(),
+        created_at: now,
+        expires_at: now + chrono::Duration::hours(ttl),
+    };
+    state.store.create_session(session).await.map_err(StoreError::from_debug)?;
 
-    let refresh_value = uuid::Uuid::new_v4().to_string();
-    refresh_token::ActiveModel {
-        id: Set(uuid::Uuid::new_v4().to_string()),
-        user_id: Set(user.id().to_string()),
-        token: Set(refresh_value.clone()),
-        expires_at: Set((chrono::Utc::now() + chrono::Duration::hours(state.config.refresh_ttl_hours)).into()),
-        created_at: Set(chrono::Utc::now().into()),
-    }
-    .insert(&state.db)
-    .await?;
-
-    Ok(Session(CookieJar::new()
-        .add(cookies::make(cookies::JWT, jwt_token, state.config.jwt_ttl_hours, &state.config))
-        .add(cookies::make(cookies::REFRESH, refresh_value, state.config.refresh_ttl_hours, &state.config))))
+    Ok(Session(CookieJar::new().add(cookies::make(cookies::SESSION, token, ttl, &state.config))))
 }
 
 pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Session {
-    if let Some(refresh) = jar.get(cookies::REFRESH) {
-        let _ = RefreshToken::delete_many()
-            .filter(refresh_token::Column::Token.eq(refresh.value()))
-            .exec(&state.db)
-            .await;
+    if let Some(cookie) = jar.get(cookies::SESSION) {
+        let token_hash = hash(cookie.value());
+        let _ = state.store.delete_session(&token_hash).await;
     }
 
-    Session(jar
-        .remove(cookies::remove(cookies::JWT, &state.config))
-        .remove(cookies::remove(cookies::REFRESH, &state.config)))
+    Session(jar.remove(cookies::remove(cookies::SESSION, &state.config)))
+}
+
+pub async fn revoke_all<U: AuthUser>(state: &AuthState<U>, user_id: &str) -> Result<(), StoreError> {
+    state.store.delete_user_sessions(user_id).await.map_err(StoreError::from_debug)
+}
+
+fn new_token() -> String {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+pub(crate) fn hash(token: &str) -> String {
+    format!("{:x}", Sha256::digest(token.as_bytes()))
 }

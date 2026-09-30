@@ -4,8 +4,7 @@ use axum::{
 };
 use validator::ValidationErrors;
 
-use crate::htmx::fragments;
-use sea_orm::DbErr;
+use crate::{htmx::fragments, store::StoreError};
 
 pub enum AppError {
     NotFound,
@@ -33,9 +32,16 @@ impl AppError {
     }
 }
 
-impl From<DbErr> for AppError {
-    fn from(error: DbErr) -> Self {
+#[cfg(feature = "sea-orm")]
+impl From<sea_orm::DbErr> for AppError {
+    fn from(error: sea_orm::DbErr) -> Self {
         AppError::internal("database", error)
+    }
+}
+
+impl From<StoreError> for AppError {
+    fn from(error: StoreError) -> Self {
+        AppError::internal("store", error)
     }
 }
 

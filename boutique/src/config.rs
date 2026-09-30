@@ -3,8 +3,7 @@ pub struct AuthConfig {
     pub login_url: String,
     pub cookie_domain: Option<String>,
     pub secure_cookies: bool,
-    pub jwt_ttl_hours: i64,
-    pub refresh_ttl_hours: i64,
+    pub session_ttl_hours: i64,
     pub reset_ttl_hours: i64,
 }
 
@@ -14,8 +13,7 @@ impl Default for AuthConfig {
             login_url: "/login".into(),
             cookie_domain: None,
             secure_cookies: !cfg!(debug_assertions),
-            jwt_ttl_hours: 1,
-            refresh_ttl_hours: 30 * 24,
+            session_ttl_hours: 30 * 24,
             reset_ttl_hours: 1,
         }
     }
@@ -38,13 +36,8 @@ impl AuthConfig {
         self
     }
 
-    pub fn jwt_ttl_hours(mut self, hours: i64) -> Self {
-        self.jwt_ttl_hours = hours;
-        self
-    }
-
-    pub fn refresh_ttl_hours(mut self, hours: i64) -> Self {
-        self.refresh_ttl_hours = hours;
+    pub fn session_ttl_hours(mut self, hours: i64) -> Self {
+        self.session_ttl_hours = hours;
         self
     }
 
