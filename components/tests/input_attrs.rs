@@ -23,6 +23,7 @@ fn password_keeps_toggle_and_extra_attrs() {
     let html = Input::password("password").attr("data-test", "pw").render().into_string();
     assert!(html.contains(r#"class="password-input""#), "{html}");
     assert!(html.contains(r#"type="password""#), "{html}");
-    assert!(html.contains(r#"<button type="button" tabindex="-1" hx-on:click=""#), "{html}");
+    assert!(html.contains(r#"<div class="shell password" bq-setup="password-toggle">"#), "{html}");
+    assert!(html.contains(r#"<button type="button" tabindex="-1" bq-ref="toggle">Show</button>"#), "{html}");
     assert!(html.contains(r#"data-test="pw""#), "{html}");
 }

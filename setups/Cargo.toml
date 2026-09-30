@@ -1,0 +1,10 @@
+[package]
+name = "bq_setups"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+heck = "0.5"
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "2", features = ["full", "visit", "parsing"] }

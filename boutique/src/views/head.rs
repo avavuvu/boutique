@@ -9,7 +9,6 @@ pub struct Head {
     pub metadata: Option<Metadata>,
     pub class: Option<String>,
     pub theme: Option<String>,
-    islands_entry: String,
 }
 
 impl Head {
@@ -23,7 +22,6 @@ impl Head {
             metadata: None,
             class: None,
             theme: None,
-            islands_entry: "/assets/islands.js".into(),
         }
     }
 
@@ -32,10 +30,6 @@ impl Head {
         self
     }
 
-    pub fn islands_entry(mut self, src: impl Into<String>) -> Self {
-        self.islands_entry = src.into();
-        self
-    }
 
     pub fn module(mut self, src: impl Into<String>) -> Self {
         self.scripts.push(src.into());
@@ -47,7 +41,6 @@ impl Head {
         self
     }
 
-    /// a vite entry by manifest name: its script plus any css it imports
     pub fn entry(mut self, name: &str) -> Self {
         for href in assets::manifest::styles(name) {
             self = self.stylesheet(href);
@@ -58,7 +51,6 @@ impl Head {
         }
     }
 
-    /// a css-only vite entry by manifest name
     pub fn css(self, name: &str) -> Self {
         match assets::manifest::url(name) {
             Some(href) => self.stylesheet(href),
@@ -75,11 +67,6 @@ impl Head {
         self.module(assets::HTMX_PATH)
     }
 
-    /// the loader must come before the app entry that calls `mountIslands`
-    pub fn islands(self) -> Self {
-        let entry = self.islands_entry.clone();
-        self.module(assets::ISLANDS_PATH).module(entry)
-    }
 
     pub fn seo(mut self, metadata: Metadata) -> Self {
         self.metadata = Some(metadata);

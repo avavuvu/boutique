@@ -2,10 +2,9 @@ use std::fmt::Write;
 
 use maud::{Markup, PreEscaped, Render, html};
 
-const TOGGLE_PASSWORD: &str = "const input = this.previousElementSibling; \
-const hidden = input.type === 'password'; \
-input.type = hidden ? 'text' : 'password'; \
-this.textContent = hidden ? 'Hide' : 'Show';";
+use crate::setup;
+
+setup!(PasswordToggle);
 
 pub struct Input<'a> {
     name: &'a str,
@@ -129,13 +128,9 @@ impl Render for Input<'_> {
                     label for=(self.name) { (label) }
                 }
                 @if self.password {
-                    div.shell.password {
+                    div.shell.password bq-setup=(PasswordToggle) {
                         (self.input_tag(Some("password-input"), ("type", "password")))
-                        button
-                            type="button"
-                            tabindex="-1"
-                            hx-on:click=(TOGGLE_PASSWORD)
-                            { "Show" }
+                        button type="button" tabindex="-1" bq-ref="toggle" { "Show" }
                     }
                 } @else {
                     div.shell .prefixed[self.prefix.is_some()] {
