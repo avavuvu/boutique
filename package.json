@@ -2,6 +2,5 @@
     "name": "boutique",
     "version": "0.2.0",
     "private": true,
-    "type": "module",
-    "description": "Shared component CSS and TypeScript for boutique sites."
+    "type": "module"
 }

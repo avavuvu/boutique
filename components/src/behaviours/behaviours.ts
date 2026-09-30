@@ -1,9 +1,7 @@
-const FEEDBACK_MS = 1500;
-
 function flash(button: HTMLElement, text: string): void {
     const original = button.textContent;
     button.textContent = text;
-    setTimeout(() => (button.textContent = original), FEEDBACK_MS);
+    setTimeout(() => (button.textContent = original), 1500);
 }
 
 document.addEventListener("click", (event) => {

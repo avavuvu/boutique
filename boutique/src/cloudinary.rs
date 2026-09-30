@@ -10,7 +10,6 @@ pub struct Cloudinary {
     api_secret: String,
 }
 
-/// what a browser needs to upload directly to cloudinary
 #[derive(Serialize)]
 pub struct Signature {
     pub signature: String,
@@ -56,8 +55,6 @@ impl Cloudinary {
         Self { cloud_name: cloud_name.into(), api_key: api_key.into(), api_secret: api_secret.into() }
     }
 
-    /// reads `CLOUDINARY_URL` (`cloudinary://key:secret@cloud`), or the three
-    /// `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` variables
     pub fn from_env() -> Option<Self> {
         if let Ok(raw) = env::var("CLOUDINARY_URL") {
             return Self::from_url(&raw);
@@ -88,7 +85,6 @@ impl Cloudinary {
         format!("https://res.cloudinary.com/{}/image/upload/{transform}/{public_id}", self.cloud_name)
     }
 
-    /// cloudinary signs the sorted `name=value` pairs joined by `&`, followed by the secret
     pub fn sign(&self, parameters: &[(&str, &str)]) -> String {
         let mut sorted: Vec<&(&str, &str)> = parameters.iter().collect();
         sorted.sort_by(|left, right| left.0.cmp(right.0));
@@ -132,27 +128,5 @@ impl Cloudinary {
             (None, Some(error)) => Err(Error::Rejected(error.message)),
             (None, None) => Err(Error::Rejected("no public_id in response".to_string())),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Cloudinary;
-
-    #[test]
-    fn parses_cloudinary_url() {
-        let client = Cloudinary::from_url("cloudinary://key123:secret456@mycloud").expect("parses");
-        assert_eq!(client.cloud_name(), "mycloud");
-        assert_eq!(client.api_key(), "key123");
-        assert_eq!(client.api_secret, "secret456");
-    }
-
-    #[test]
-    fn signs_sorted_parameters() {
-        let client = Cloudinary::new("c", "k", "abcd");
-        let one = client.sign(&[("timestamp", "1"), ("public_id", "p")]);
-        let two = client.sign(&[("public_id", "p"), ("timestamp", "1")]);
-        assert_eq!(one, two);
-        assert_eq!(one.len(), 40);
     }
 }

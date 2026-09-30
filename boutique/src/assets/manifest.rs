@@ -42,8 +42,6 @@ fn read(path: &str) -> Option<Entries> {
     )
 }
 
-/// `route` is the public URL prefix, `dir` the folder Vite writes to.
-/// In debug the manifest is re-read on every lookup; in release it is read once here.
 pub fn init(route: &str, dir: &str) {
     let path = format!("{dir}/.vite/manifest.json");
     let config = Config { route: route.trim_end_matches('/').to_string(), path, cache: OnceLock::new() };
