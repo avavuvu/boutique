@@ -1,147 +1,168 @@
-use std::fmt::Write;
+use maud::{Markup, PreEscaped, html};
 
-use maud::{Markup, PreEscaped, Render, html};
-
-use crate::setup;
+use crate::{
+    component, setup,
+    tag::{Attrs, Tag},
+};
 
 setup!(PasswordToggle);
 
-pub struct Input<'a> {
-    name: &'a str,
-    kind: &'a str,
-    autocomplete: &'a str,
-    password: bool,
-    label: Option<&'a str>,
-    placeholder: Option<&'a str>,
-    value: Option<&'a str>,
-    prefix: Option<&'a str>,
-    required: bool,
-    attrs: Vec<(&'a str, &'a str)>,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Kind {
+    #[default]
+    Text,
+    Email,
+    Password,
+    Search,
+    Url,
+    Tel,
+    Number,
+    Color,
+    File,
+    Date,
 }
 
-impl<'a> Input<'a> {
-    fn new(name: &'a str, kind: &'a str, autocomplete: &'a str) -> Self {
-        Self {
-            name,
-            kind,
-            autocomplete,
-            password: false,
-            label: None,
-            placeholder: None,
-            value: None,
-            prefix: None,
-            required: false,
-            attrs: Vec::new(),
+impl Kind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Kind::Text => "text",
+            Kind::Email => "email",
+            Kind::Password => "password",
+            Kind::Search => "search",
+            Kind::Url => "url",
+            Kind::Tel => "tel",
+            Kind::Number => "number",
+            Kind::Color => "color",
+            Kind::File => "file",
+            Kind::Date => "date",
         }
     }
 
-    pub fn text(name: &'a str) -> Self {
-        Self::new(name, "text", name)
-    }
-
-    pub fn email(name: &'a str) -> Self {
-        Self::new(name, "email", "email")
-    }
-
-    pub fn password(name: &'a str) -> Self {
-        let mut input = Self::new(name, "password", "current-password");
-        input.password = true;
-        input
-    }
-
-    pub fn label(mut self, label: &'a str) -> Self {
-        self.label = Some(label);
-        self
-    }
-
-    pub fn placeholder(mut self, placeholder: &'a str) -> Self {
-        self.placeholder = Some(placeholder);
-        self
-    }
-
-    pub fn value(mut self, value: &'a str) -> Self {
-        self.value = Some(value);
-        self
-    }
-
-    pub fn prefix(mut self, prefix: &'a str) -> Self {
-        self.prefix = Some(prefix);
-        self
-    }
-
-    pub fn autocomplete(mut self, autocomplete: &'a str) -> Self {
-        self.autocomplete = autocomplete;
-        self
-    }
-
-    pub fn required(mut self) -> Self {
-        self.required = true;
-        self
-    }
-
-    /// any extra attribute on the `<input>`, e.g. `x-model` or `hx-post`
-    pub fn attr(mut self, name: &'a str, value: &'a str) -> Self {
-        self.attrs.push((name, value));
-        self
-    }
-
-    /// maud has no splice in attribute position, so the tag is assembled by hand
-    fn input_tag(&self, class: Option<&str>, type_attr: (&str, &str)) -> Markup {
-        let mut attrs: Vec<(&str, &str)> = vec![
-            ("id", self.name),
-            ("name", self.name),
-            type_attr,
-            ("autocomplete", self.autocomplete),
-        ];
-        if let Some(class) = class {
-            attrs.push(("class", class));
+    fn autocomplete(self, name: &str) -> Option<&str> {
+        match self {
+            Kind::Text => Some(name),
+            Kind::Email => Some("email"),
+            Kind::Password => Some("current-password"),
+            _ => None,
         }
-        if let Some(p) = self.placeholder {
-            attrs.push(("placeholder", p));
-        }
-        if let Some(v) = self.value {
-            attrs.push(("value", v));
-        }
-        attrs.extend(self.attrs.iter().copied());
-
-        let mut out = String::from("<input");
-        for (name, value) in attrs {
-            out.push(' ');
-            out.push_str(name);
-            out.push_str("=\"");
-            write!(maud::Escaper::new(&mut out), "{value}").expect("string write cannot fail");
-            out.push('"');
-        }
-        if self.required {
-            out.push_str(" required");
-        }
-        out.push('>');
-        PreEscaped(out)
     }
 }
 
-impl Render for Input<'_> {
-    fn render(&self) -> Markup {
-        html! {
-            div.input-component {
-                @if let Some(label) = self.label {
-                    label for=(self.name) { (label) }
-                }
-                @if self.password {
-                    div.shell.password bq-setup=(PasswordToggle) {
-                        (self.input_tag(Some("password-input"), ("type", "password")))
-                        button type="button" tabindex="-1" bq-ref="toggle" { "Show" }
-                    }
-                } @else {
-                    div.shell .prefixed[self.prefix.is_some()] {
-                        @if let Some(prefix) = self.prefix {
-                            span.prefix { (prefix) }
-                        }
-                        (self.input_tag(None, ("type", self.kind)))
-                    }
-                }
-                p.error id={ (self.name) "-error" } {}
+fn field(name: &str, label: Option<&str>, hint: Option<&str>, shell_classes: &str, control: Markup) -> Markup {
+    html! {
+        div.input-component {
+            @if let Some(label) = label {
+                label for=(name) { (label) }
             }
+            div class=(shell_classes) { (control) }
+            @if let Some(hint) = hint {
+                p.hint { (hint) }
+            }
+            p.error id={ (name) "-error" } {}
         }
     }
+}
+
+#[component]
+pub fn input(
+    #[builder(start_fn)] name: &str,
+    #[builder(default)] kind: Kind,
+    label: Option<&str>,
+    hint: Option<&str>,
+    placeholder: Option<&str>,
+    value: Option<&str>,
+    prefix: Option<&str>,
+    suffix: Option<&str>,
+    autocomplete: Option<&str>,
+    pattern: Option<&str>,
+    accept: Option<&str>,
+    min_length: Option<u32>,
+    max_length: Option<u32>,
+    #[builder(default, with = || true)] required: bool,
+    #[builder(default, with = || true)] disabled: bool,
+    #[builder(default)] attrs: Attrs<'_>,
+) -> Markup {
+    let password = kind == Kind::Password;
+    let min_length = min_length.map(|length| length.to_string());
+    let max_length = max_length.map(|length| length.to_string());
+
+    let tag = Tag::open("input")
+        .attr("id", name)
+        .attr("name", name)
+        .attr("type", kind.as_str())
+        .maybe("autocomplete", autocomplete.or_else(|| kind.autocomplete(name)))
+        .maybe("class", password.then_some("password-input"))
+        .maybe("placeholder", placeholder)
+        .maybe("value", value)
+        .maybe("pattern", pattern)
+        .maybe("accept", accept)
+        .maybe("minlength", min_length.as_deref())
+        .maybe("maxlength", max_length.as_deref())
+        .attrs(attrs)
+        .flag("required", required)
+        .flag("disabled", disabled)
+        .finish();
+
+    if password {
+        return html! {
+            div.input-component {
+                @if let Some(label) = label {
+                    label for=(name) { (label) }
+                }
+                div.shell.password bq-setup=(PasswordToggle) {
+                    (tag)
+                    button type="button" tabindex="-1" bq-ref="toggle" { "Show" }
+                }
+                @if let Some(hint) = hint {
+                    p.hint { (hint) }
+                }
+                p.error id={ (name) "-error" } {}
+            }
+        };
+    }
+
+    let affixed = prefix.is_some() || suffix.is_some();
+    let control = html! {
+        @if let Some(prefix) = prefix { span.prefix { (prefix) } }
+        (tag)
+        @if let Some(suffix) = suffix { span.suffix { (suffix) } }
+    };
+
+    field(name, label, hint, if affixed { "shell prefixed" } else { "shell" }, control)
+}
+
+#[component]
+pub fn textarea(
+    #[builder(start_fn)] name: &str,
+    label: Option<&str>,
+    hint: Option<&str>,
+    placeholder: Option<&str>,
+    value: Option<&str>,
+    rows: Option<u16>,
+    max_length: Option<u32>,
+    #[builder(default, with = || true)] required: bool,
+    #[builder(default, with = || true)] disabled: bool,
+    #[builder(default)] attrs: Attrs<'_>,
+) -> Markup {
+    let rows = rows.map(|rows| rows.to_string());
+    let max_length = max_length.map(|length| length.to_string());
+
+    let open = Tag::open("textarea")
+        .attr("id", name)
+        .attr("name", name)
+        .maybe("rows", rows.as_deref())
+        .maybe("placeholder", placeholder)
+        .maybe("maxlength", max_length.as_deref())
+        .attrs(attrs)
+        .flag("required", required)
+        .flag("disabled", disabled)
+        .finish();
+
+    let control = html! {
+        (open)
+        @if let Some(value) = value { (value) }
+        (PreEscaped("</textarea>"))
+    };
+
+    field(name, label, hint, "shell", control)
 }

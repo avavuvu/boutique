@@ -2,10 +2,61 @@ use heck::{ToKebabCase, ToUpperCamelCase};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{
-    GenericParam, Ident, ItemFn, Lifetime, Token, Visibility,
+    Expr, GenericParam, Ident, ItemFn, Lifetime, LitStr, Token, Visibility,
+    ext::IdentExt,
     parse::{Parse, ParseStream},
     parse_macro_input,
+    punctuated::Punctuated,
 };
+
+struct AttributePair {
+    name: String,
+    span: proc_macro2::Span,
+    value: Option<Expr>,
+}
+
+impl Parse for AttributePair {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let (name, span) = if input.peek(LitStr) {
+            let literal: LitStr = input.parse()?;
+            (literal.value(), literal.span())
+        } else {
+            let ident = input.call(Ident::parse_any)?;
+            (ident.unraw().to_string().replace('_', "-"), ident.span())
+        };
+
+        let value = if input.parse::<Option<Token![=]>>()?.is_some() { Some(input.parse()?) } else { None };
+        Ok(Self { name, span, value })
+    }
+}
+
+fn valid_attribute_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|character| !character.is_whitespace() && !character.is_control() && !"\"'<>/=`".contains(character))
+}
+
+#[proc_macro]
+pub fn attrs(input: TokenStream) -> TokenStream {
+    let pairs = parse_macro_input!(input with Punctuated::<AttributePair, Token![,]>::parse_terminated);
+
+    let mut items = Vec::new();
+    for pair in pairs {
+        if !valid_attribute_name(&pair.name) {
+            let message = format!("{:?} is not a valid attribute name", pair.name);
+            return syn::Error::new(pair.span, message).to_compile_error().into();
+        }
+        let name = &pair.name;
+        let value = match &pair.value {
+            Some(value) => quote!(::core::option::Option::Some(#value)),
+            None => quote!(::core::option::Option::None),
+        };
+        items.push(quote!((#name, #value)));
+    }
+
+    quote!(::bq_components::Attrs::__checked(&[#(#items),*])).into()
+}
 
 struct SetupDeclaration {
     visibility: Visibility,
