@@ -38,24 +38,44 @@ fn valid_attribute_name(name: &str) -> bool {
 }
 
 #[proc_macro]
+pub fn html(input: TokenStream) -> TokenStream {
+    bq_html::expand(input.into()).into()
+}
+
+#[proc_macro]
 pub fn attrs(input: TokenStream) -> TokenStream {
     let pairs = parse_macro_input!(input with Punctuated::<AttributePair, Token![,]>::parse_terminated);
+    let attrs = proc_macro2::Ident::new("__bq_attrs", proc_macro2::Span::mixed_site());
+    let buffer = proc_macro2::Ident::new("__bq_value", proc_macro2::Span::mixed_site());
 
+    let mut seen = std::collections::HashSet::new();
     let mut items = Vec::new();
     for pair in pairs {
         if !valid_attribute_name(&pair.name) {
             let message = format!("{:?} is not a valid attribute name", pair.name);
             return syn::Error::new(pair.span, message).to_compile_error().into();
         }
+        if pair.name != "class" && !seen.insert(pair.name.clone()) {
+            let message = format!("the attribute {:?} is given two times", pair.name);
+            return syn::Error::new(pair.span, message).to_compile_error().into();
+        }
         let name = &pair.name;
-        let value = match &pair.value {
-            Some(value) => quote!(::core::option::Option::Some(#value)),
-            None => quote!(::core::option::Option::None),
-        };
-        items.push(quote!((#name, #value)));
+        items.push(match &pair.value {
+            Some(value) => quote! {{
+                let mut #buffer = ::std::string::String::new();
+                ::bq_components::maud::macro_private::render_to!(&(#value), &mut #buffer);
+                #attrs.__text(#name, #buffer);
+            }},
+            None => quote!(#attrs.__flag(#name);),
+        });
     }
 
-    quote!(::bq_components::Attrs::__checked(&[#(#items),*])).into()
+    quote! {{
+        let mut #attrs = ::bq_components::Attrs::new();
+        #(#items)*
+        #attrs
+    }}
+    .into()
 }
 
 struct SetupDeclaration {
@@ -83,17 +103,14 @@ pub fn setup(input: TokenStream) -> TokenStream {
     let attribute = name.to_string().to_kebab_case();
 
     quote! {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        #visibility struct #name;
+        #visibility enum #name {}
 
         impl #name {
             #visibility const NAME: &'static str = #attribute;
         }
 
-        impl ::bq_components::maud::Render for #name {
-            fn render_to(&self, buffer: &mut ::std::string::String) {
-                buffer.push_str(#attribute);
-            }
+        impl ::bq_components::Setup for #name {
+            const NAME: &'static str = #attribute;
         }
     }
     .into()
@@ -105,8 +122,14 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let func = parse_macro_input!(item as ItemFn);
 
     let fn_name = &func.sig.ident;
-    let builder = format_ident!("{}Builder", fn_name.to_string().to_upper_camel_case());
+    let visibility = &func.vis;
+    let pascal = fn_name.unraw().to_string().to_upper_camel_case();
+    let builder = format_ident!("{pascal}Builder");
     let state_mod = format_ident!("{fn_name}_builder");
+    let alias = (fn_name.unraw() != pascal).then(|| {
+        let alias = Ident::new(&pascal, fn_name.span());
+        quote!(#visibility use #fn_name as #alias;)
+    });
 
     let elided = count_elided_lifetimes(&func);
     let named: Vec<&GenericParam> = func.sig.generics.params.iter().collect();
@@ -142,6 +165,8 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
             derive(Clone)
         )]
         #func
+
+        #alias
 
         impl<#(#lifetimes_named,)* #(#generated,)* #(#others_named,)* __S: #state_mod::IsComplete>
             ::bq_components::maud::Render for #builder<#(#named_args,)* #(#generated,)* __S>

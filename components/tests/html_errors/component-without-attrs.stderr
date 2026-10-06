@@ -1,0 +1,8 @@
+error[E0599]: no method named `attrs` found for struct `DividerBuilder<S>` in the current scope
+  --> tests/html_errors/component-without-attrs.rs:10:9
+   |
+ 3 | #[component]
+   | ------------ method `attrs` not found for this struct
+...
+10 |         Divider .wide;
+   |         ^^^^^^^ method not found in `DividerBuilder`

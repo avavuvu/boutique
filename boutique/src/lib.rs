@@ -22,6 +22,7 @@ pub mod cloudinary;
 pub use argon2;
 pub use axum;
 pub use axum_extra;
+pub use bq_components::html;
 pub use chrono;
 pub use maud;
 pub use uuid;

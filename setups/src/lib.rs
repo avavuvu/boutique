@@ -1,7 +1,11 @@
-mod markup;
+mod index;
+mod walk;
+
+#[cfg(test)]
+mod tests;
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -10,13 +14,21 @@ use heck::{ToKebabCase, ToLowerCamelCase};
 use proc_macro2::{TokenStream, TokenTree};
 use syn::visit::Visit;
 
-use markup::{Usage, Walker};
+use index::Index;
+use walk::{Tags, Usage, Walker};
 
 const RESERVED: [&str; 2] = ["signal", "props"];
 
 struct Root {
     dir: PathBuf,
     import: String,
+}
+
+struct Source {
+    root: usize,
+    name: String,
+    import: String,
+    text: String,
 }
 
 struct Declaration {
@@ -29,6 +41,7 @@ struct Declaration {
 #[derive(Default)]
 struct Merged {
     tags: BTreeSet<String>,
+    any: bool,
     refs: BTreeMap<String, MergedRef>,
     usages: usize,
 }
@@ -36,6 +49,7 @@ struct Merged {
 #[derive(Default)]
 struct MergedRef {
     tags: BTreeSet<String>,
+    any: bool,
     optional: bool,
     many: bool,
     usages: usize,
@@ -86,219 +100,173 @@ impl Generator {
     }
 
     fn generate(&self) -> Result<(String, String, Vec<String>), Vec<String>> {
-        let mut walker = Walker::default();
-        let mut declarations = Vec::new();
-        let mut errors = Vec::new();
-
-        for root in &self.roots {
+        let mut sources = Vec::new();
+        for (index, root) in self.roots.iter().enumerate() {
             let mut files = Vec::new();
             rust_files(&root.dir, &mut files);
             files.sort();
 
             for file in files {
-                let source = fs::read_to_string(&file).unwrap_or_else(|error| panic!("read {}: {error}", file.display()));
-                let parsed = match syn::parse_file(&source) {
-                    Ok(parsed) => parsed,
-                    Err(error) => {
-                        errors.push(format!("{}: {error}", file.display()));
-                        continue;
-                    }
-                };
-
+                let text = fs::read_to_string(&file).unwrap_or_else(|error| panic!("read {}: {error}", file.display()));
                 let folder = file.parent().unwrap_or(&root.dir).strip_prefix(&root.dir).unwrap_or(Path::new(""));
-                let import = join_import(&root.import, folder);
-
-                let mut collector = Collector::default();
-                collector.visit_file(&parsed);
-
-                walker.start_file(file.display().to_string(), collector.functions);
-                let mut visitor = Visitor { walker: &mut walker, declarations: &mut declarations, errors: &mut errors, import };
-                visitor.visit_file(&parsed);
-                walker.finish_file();
+                sources.push(Source {
+                    root: index,
+                    name: file.display().to_string(),
+                    import: join_import(&root.import, folder),
+                    text,
+                });
             }
         }
+        analyse(&self.runtime, &sources)
+    }
+}
 
-        errors.append(&mut walker.errors);
+fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<String>), Vec<String>> {
+    let mut index = Index::default();
+    let mut declarations = Vec::new();
+    let mut errors = Vec::new();
 
-        let mut by_name: BTreeMap<String, Declaration> = BTreeMap::new();
-        for declaration in declarations {
-            if let Some(existing) = by_name.get(&declaration.name) {
-                errors.push(format!(
-                    "{}: setup!({}) is declared two times, first at {}",
-                    declaration.location, declaration.name, existing.location
-                ));
+    for source in sources {
+        let parsed = match syn::parse_file(&source.text) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                errors.push(format!("{}: {error}", source.name));
                 continue;
             }
-            by_name.insert(declaration.name.clone(), declaration);
-        }
-
-        let merged = merge(&walker.usages, &by_name, &mut errors);
-
-        let mut warnings = std::mem::take(&mut walker.warnings);
-        for (name, declaration) in &by_name {
-            if !merged.contains_key(name) {
-                warnings.push(format!("{}: setup!({name}) is not used in any bq-setup", declaration.location));
-            }
-        }
-
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-
-        Ok((self.types(&by_name, &merged), self.registry(&by_name, &merged), warnings))
+        };
+        index.add_file(source.name.clone(), source.root, &parsed);
+        let mut visitor = Declarations { source, declarations: &mut declarations, errors: &mut errors };
+        visitor.visit_file(&parsed);
     }
 
-    fn types(&self, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
-        let mut out = format!("import type {{ Setup }} from \"{}\";\n\n", self.runtime);
-
-        for name in declarations.keys() {
-            let empty = Merged::default();
-            let setup = merged.get(name).unwrap_or(&empty);
-            let tags = tag_union(&setup.tags);
-
-            if setup.refs.is_empty() {
-                out.push_str(&format!("export type {name} = Setup<{tags}>;\n"));
-                continue;
-            }
-
-            let refs: Vec<String> = setup
-                .refs
-                .iter()
-                .map(|(key, reference)| {
-                    let tags = tag_union(&reference.tags);
-                    if reference.many {
-                        format!("{key}: ({tags})[]")
-                    } else if reference.optional {
-                        format!("{key}?: {tags}")
-                    } else {
-                        format!("{key}: {tags}")
-                    }
-                })
-                .collect();
-            out.push_str(&format!("export type {name} = Setup<{tags}, {{ {} }}>;\n", refs.join("; ")));
+    let mut walker = Walker::new(&index);
+    for (block, html) in index.blocks.iter().enumerate() {
+        if !html.function.is_some_and(|function| index.functions[function].component) {
+            walker.block(block);
         }
+    }
+    for (function, item) in index.functions.iter().enumerate() {
+        if item.component && !walker.reached.contains(&function) {
+            for &block in &item.blocks {
+                walker.block(block);
+            }
+        }
+    }
+    let (usages, mut walk_errors, mut warnings) = walker.finish();
+    errors.append(&mut walk_errors);
 
-        out
+    let mut by_name: BTreeMap<String, Declaration> = BTreeMap::new();
+    for declaration in declarations {
+        if let Some(existing) = by_name.get(&declaration.name) {
+            errors.push(format!(
+                "{}: setup!({}) is declared two times, first at {}",
+                declaration.location, declaration.name, existing.location
+            ));
+            continue;
+        }
+        by_name.insert(declaration.name.clone(), declaration);
     }
 
-    fn registry(&self, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
-        let mut out = format!("import type {{ Registry }} from \"{}\";\nimport type * as setups from \"./setups\";\n", self.runtime);
+    let merged = merge(&usages, &by_name, &mut errors);
 
-        for (name, declaration) in declarations {
-            if declaration.eager {
-                out.push_str(&format!("import {{ {} }} from \"{}\";\n", name.to_lower_camel_case(), declaration.import));
-            }
+    for (name, declaration) in &by_name {
+        if !merged.contains_key(name) {
+            warnings.push(format!("{}: setup!({name}) is not used in any bq-setup", declaration.location));
         }
-
-        out.push_str("\nexport const registry: Registry = {\n");
-        for (name, declaration) in declarations {
-            let empty = Merged::default();
-            let setup = merged.get(name).unwrap_or(&empty);
-            let export = name.to_lower_camel_case();
-            let tags = quoted_list(setup.tags.iter());
-            let many = quoted_list(setup.refs.iter().filter(|(_, reference)| reference.many).map(|(key, _)| key));
-
-            out.push_str(&format!("    \"{}\": {{\n", name.to_kebab_case()));
-            out.push_str(&format!("        tags: [{tags}],\n"));
-            out.push_str(&format!("        many: [{many}],\n"));
-            if declaration.eager {
-                out.push_str(&format!("        setup: {export} satisfies setups.{name},\n"));
-            } else {
-                out.push_str(&format!(
-                    "        load: () => import(\"{}\").then((module) => module.{export} satisfies setups.{name}),\n",
-                    declaration.import
-                ));
-            }
-            out.push_str("    },\n");
-        }
-        out.push_str("};\n");
-
-        out
     }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    Ok((types(runtime, &by_name, &merged), registry(runtime, &by_name, &merged), warnings))
 }
 
-#[derive(Default)]
-struct Collector {
-    functions: HashMap<String, Vec<TokenStream>>,
-    current: Option<String>,
-}
+fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
+    let mut out = format!("import type {{ Setup }} from \"{runtime}\";\n\n");
 
-impl<'ast> Visit<'ast> for Collector {
-    fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
-        let previous = self.current.replace(item.sig.ident.to_string());
-        syn::visit::visit_item_fn(self, item);
-        self.current = previous;
-    }
+    for name in declarations.keys() {
+        let empty = Merged::default();
+        let setup = merged.get(name).unwrap_or(&empty);
+        let tags = tag_union(&setup.tags, setup.any);
 
-    fn visit_impl_item_fn(&mut self, item: &'ast syn::ImplItemFn) {
-        let previous = self.current.take();
-        syn::visit::visit_impl_item_fn(self, item);
-        self.current = previous;
-    }
-
-    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
-        if let Some(function) = &self.current {
-            let blocks = self.functions.entry(function.clone()).or_default();
-            if mac.path.segments.last().is_some_and(|segment| segment.ident == "html") {
-                blocks.push(mac.tokens.clone());
-            } else {
-                html_blocks(mac.tokens.clone(), blocks);
-            }
+        if setup.refs.is_empty() {
+            out.push_str(&format!("export type {name} = Setup<{tags}>;\n"));
+            continue;
         }
-        syn::visit::visit_macro(self, mac);
+
+        let refs: Vec<String> = setup
+            .refs
+            .iter()
+            .map(|(key, reference)| {
+                let tags = tag_union(&reference.tags, reference.any);
+                if reference.many {
+                    format!("{key}: ({tags})[]")
+                } else if reference.optional {
+                    format!("{key}?: {tags}")
+                } else {
+                    format!("{key}: {tags}")
+                }
+            })
+            .collect();
+        out.push_str(&format!("export type {name} = Setup<{tags}, {{ {} }}>;\n", refs.join("; ")));
     }
+
+    out
 }
 
-fn html_blocks(tokens: TokenStream, out: &mut Vec<TokenStream>) {
-    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
-    for (index, token) in tokens.iter().enumerate() {
-        let TokenTree::Group(group) = token else { continue };
-        let is_html = index >= 2
-            && matches!(&tokens[index - 2], TokenTree::Ident(ident) if ident == "html")
-            && matches!(&tokens[index - 1], TokenTree::Punct(punct) if punct.as_char() == '!');
-        if is_html {
-            out.push(group.stream());
+fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
+    let mut out = format!("import type {{ Registry }} from \"{runtime}\";\nimport type * as setups from \"./setups\";\n");
+
+    for (name, declaration) in declarations {
+        if declaration.eager {
+            out.push_str(&format!("import {{ {} }} from \"{}\";\n", name.to_lower_camel_case(), declaration.import));
+        }
+    }
+
+    out.push_str("\nexport const registry: Registry = {\n");
+    for (name, declaration) in declarations {
+        let empty = Merged::default();
+        let setup = merged.get(name).unwrap_or(&empty);
+        let export = name.to_lower_camel_case();
+        let tags = if setup.any { String::new() } else { quoted_list(setup.tags.iter()) };
+        let many = quoted_list(setup.refs.iter().filter(|(_, reference)| reference.many).map(|(key, _)| key));
+
+        out.push_str(&format!("    \"{}\": {{\n", name.to_kebab_case()));
+        out.push_str(&format!("        tags: [{tags}],\n"));
+        out.push_str(&format!("        many: [{many}],\n"));
+        if declaration.eager {
+            out.push_str(&format!("        setup: {export} satisfies setups.{name},\n"));
         } else {
-            html_blocks(group.stream(), out);
+            out.push_str(&format!(
+                "        load: () => import(\"{}\").then((module) => module.{export} satisfies setups.{name}),\n",
+                declaration.import
+            ));
         }
+        out.push_str("    },\n");
     }
+    out.push_str("};\n");
+
+    out
 }
 
-struct Visitor<'a> {
-    walker: &'a mut Walker,
+struct Declarations<'a> {
+    source: &'a Source,
     declarations: &'a mut Vec<Declaration>,
     errors: &'a mut Vec<String>,
-    import: String,
 }
 
-impl<'ast> Visit<'ast> for Visitor<'_> {
-    fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
-        let previous = self.walker.function.replace(item.sig.ident.to_string());
-        syn::visit::visit_item_fn(self, item);
-        self.walker.function = previous;
-    }
-
-    fn visit_impl_item_fn(&mut self, item: &'ast syn::ImplItemFn) {
-        let previous = self.walker.function.take();
-        syn::visit::visit_impl_item_fn(self, item);
-        self.walker.function = previous;
-    }
-
+impl<'ast> Visit<'ast> for Declarations<'_> {
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
-        let name = mac.path.segments.last().map(|segment| segment.ident.to_string());
-        match name.as_deref() {
-            Some("html") => self.walker.html(mac.tokens.clone()),
-            Some("setup") => {
-                let line = mac.path.segments.last().map(|segment| segment.ident.span().start().line).unwrap_or(0);
-                let location = format!("{}:{line}", self.walker.file);
-                match declaration(mac.tokens.clone()) {
-                    Ok((name, eager)) => {
-                        self.declarations.push(Declaration { name, eager, import: self.import.clone(), location });
-                    }
-                    Err(message) => self.errors.push(format!("{location}: {message}")),
+        if mac.path.segments.last().is_some_and(|segment| segment.ident == "setup") {
+            let line = mac.path.segments.last().map(|segment| segment.ident.span().start().line).unwrap_or(0);
+            let location = format!("{}:{line}", self.source.name);
+            match declaration(mac.tokens.clone()) {
+                Ok((name, eager)) => {
+                    self.declarations.push(Declaration { name, eager, import: self.source.import.clone(), location });
                 }
+                Err(message) => self.errors.push(format!("{location}: {message}")),
             }
-            _ => self.walker.nested(mac.tokens.clone()),
         }
         syn::visit::visit_macro(self, mac);
     }
@@ -347,7 +315,7 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors:
 
         let setup = merged.entry(usage.name.clone()).or_default();
         setup.usages += 1;
-        setup.tags.insert(usage.tag.clone());
+        add_tags(&usage.tags, &mut setup.tags, &mut setup.any);
 
         let mut seen = BTreeSet::new();
         for reference in &usage.refs {
@@ -358,7 +326,7 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors:
 
             let first = seen.insert(reference.name.clone());
             let entry = setup.refs.entry(reference.name.clone()).or_default();
-            entry.tags.insert(reference.tag.clone());
+            add_tags(&reference.tags, &mut entry.tags, &mut entry.any);
             entry.optional |= reference.optional;
             entry.many |= reference.many || !first;
             if first {
@@ -378,8 +346,15 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors:
     merged
 }
 
-fn tag_union(tags: &BTreeSet<String>) -> String {
-    if tags.is_empty() {
+fn add_tags(tags: &Tags, into: &mut BTreeSet<String>, any: &mut bool) {
+    match tags {
+        Tags::Known(tags) => into.extend(tags.iter().cloned()),
+        Tags::Unknown => *any = true,
+    }
+}
+
+fn tag_union(tags: &BTreeSet<String>, any: bool) -> String {
+    if any || tags.is_empty() {
         return "string".into();
     }
     tags.iter().map(|tag| format!("\"{tag}\"")).collect::<Vec<_>>().join(" | ")

@@ -1,0 +1,5 @@
+error: `(..attrs)` must come after an element
+ --> tests/html_errors/spread-outside-element.rs:6:9
+  |
+6 |         (..extra)
+  |         ^^^^^^^^^

@@ -1,0 +1,5 @@
+error: expected one of: curly braces, literal, parentheses, `@`, `;`
+ --> tests/html_errors/component-in-attribute.rs:5:19
+  |
+5 |         p title={ Card("x") {} } {}
+  |                   ^^^^

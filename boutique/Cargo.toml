@@ -11,6 +11,7 @@ cloudinary = ["dep:reqwest", "dep:sha1", "dep:url"]
 sea-orm = ["dep:sea-orm"]
 
 [dependencies]
+bq_components = { path = "../components" }
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["net"] }
 tower = "0.5"
