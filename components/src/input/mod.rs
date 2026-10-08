@@ -60,9 +60,9 @@ pub fn input(
         attrs.set_default("autocomplete", autocomplete);
     }
 
-    let password = kind == Kind::Password;
+    let is_password = kind == Kind::Password;
     let control = html! {
-        input #(name) name=(name) type=(kind.as_str()) .password-input[password] (..attrs);
+        input #(name) name=(name) type=(kind.as_str()) .password-input[is_password] (..attrs);
     };
 
     html! {
@@ -70,7 +70,7 @@ pub fn input(
             @if let Some(label) = label {
                 label for=(name) { (label) }
             }
-            @if password {
+            @if is_password {
                 div.shell.password bq-setup=(PasswordToggle) {
                     (control)
                     button type="button" tabindex="-1" bq-ref="toggle" { "Show" }

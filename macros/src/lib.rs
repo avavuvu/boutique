@@ -119,11 +119,17 @@ pub fn setup(input: TokenStream) -> TokenStream {
 /// Turns a function that returns `Markup` into a component.
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let func = parse_macro_input!(item as ItemFn);
+    let mut func = parse_macro_input!(item as ItemFn);
+
+    let pascal = func.sig.ident.unraw().to_string().to_upper_camel_case();
+    let docs = component_docs(&pascal, &func);
+    if func.attrs.iter().any(is_doc) {
+        func.attrs.push(syn::parse_quote!(#[doc = ""]));
+    }
+    func.attrs.extend(docs.iter().map(|line| -> syn::Attribute { syn::parse_quote!(#[doc = #line]) }));
 
     let fn_name = &func.sig.ident;
     let visibility = &func.vis;
-    let pascal = fn_name.unraw().to_string().to_upper_camel_case();
     let builder = format_ident!("{pascal}Builder");
     let state_mod = format_ident!("{fn_name}_builder");
     let alias = (fn_name.unraw() != pascal).then(|| {
@@ -159,7 +165,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #[::bq_components::bon::builder(
             crate = ::bq_components::bon,
-            builder_type = #builder,
+            builder_type(name = #builder, doc { #(#[doc = #docs])* }),
             state_mod = #state_mod,
             finish_fn = build,
             derive(Clone)
@@ -178,6 +184,195 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+#[derive(PartialEq)]
+enum Role {
+    Positional,
+    Named,
+    Children,
+    Attrs,
+}
+
+struct Prop {
+    name: String,
+    ty: String,
+    role: Role,
+    kind: String,
+    required: bool,
+    maybe: bool,
+    docs: String,
+}
+
+#[derive(Default)]
+struct BuilderOptions {
+    start_fn: bool,
+    required: bool,
+    into: bool,
+    default: Option<Option<String>>,
+}
+
+fn is_doc(attr: &syn::Attribute) -> bool {
+    attr.path().is_ident("doc")
+}
+
+fn doc_text(attrs: &[syn::Attribute]) -> String {
+    attrs
+        .iter()
+        .filter(|attr| is_doc(attr))
+        .filter_map(|attr| match &attr.meta {
+            syn::Meta::NameValue(syn::MetaNameValue {
+                value: Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(text), .. }),
+                ..
+            }) => Some(text.value().trim().to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn builder_options(attrs: &[syn::Attribute]) -> BuilderOptions {
+    let mut options = BuilderOptions::default();
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("builder")) {
+        let _ = attr.parse_nested_meta(|meta| {
+            let value = if meta.input.peek(Token![=]) {
+                Some(meta.value()?.parse::<Expr>()?)
+            } else {
+                if !meta.input.is_empty() && !meta.input.peek(Token![,]) {
+                    meta.input.parse::<proc_macro2::TokenTree>()?;
+                }
+                None
+            };
+
+            if meta.path.is_ident("start_fn") {
+                options.start_fn = true;
+            } else if meta.path.is_ident("required") {
+                options.required = true;
+            } else if meta.path.is_ident("into") {
+                options.into = true;
+            } else if meta.path.is_ident("default") {
+                options.default = Some(value.map(|value| tidy(&quote!(#value).to_string())));
+            }
+            Ok(())
+        });
+    }
+    options
+}
+
+fn option_inner(ty: &syn::Type) -> Option<&syn::Type> {
+    let syn::Type::Path(path) = ty else { return None };
+    let segment = path.path.segments.last().filter(|segment| path.qself.is_none() && segment.ident == "Option")?;
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else { return None };
+    match arguments.args.first() {
+        Some(syn::GenericArgument::Type(inner)) => Some(inner),
+        _ => None,
+    }
+}
+
+fn tidy(tokens: &str) -> String {
+    [(" < ", "<"), ("< ", "<"), (" >", ">"), ("& ", "&"), (" ,", ","), (" :: ", "::"), (":: ", "::"), (" !", "!"), ("! ", "!")]
+        .iter()
+        .fold(tokens.to_string(), |text, (from, to)| text.replace(from, to))
+}
+
+fn props(func: &ItemFn) -> Vec<Prop> {
+    func.sig
+        .inputs
+        .iter()
+        .filter_map(|input| match input {
+            syn::FnArg::Typed(typed) => Some(typed),
+            syn::FnArg::Receiver(_) => None,
+        })
+        .filter_map(|typed| {
+            let syn::Pat::Ident(pattern) = typed.pat.as_ref() else { return None };
+            let name = pattern.ident.unraw().to_string();
+            let options = builder_options(&typed.attrs);
+            let optional_option = !options.required && option_inner(&typed.ty).is_some();
+
+            let role = match name.as_str() {
+                _ if options.start_fn => Role::Positional,
+                "children" => Role::Children,
+                "attrs" => Role::Attrs,
+                _ => Role::Named,
+            };
+
+            let setter_type = if optional_option { option_inner(&typed.ty) } else { None }.unwrap_or(&typed.ty);
+            let setter_type = tidy(&quote!(#setter_type).to_string());
+            let ty = if options.into { format!("impl Into<{setter_type}>") } else { setter_type };
+
+            let required = options.default.is_none() && !optional_option;
+            let kind = match (&role, &options.default) {
+                (Role::Positional, _) => "positional".to_string(),
+                (Role::Attrs, _) => "call-site attributes".to_string(),
+                (Role::Children, None) => "block body".to_string(),
+                (Role::Children, Some(_)) => "block body, optional".to_string(),
+                (Role::Named, Some(Some(default))) => format!("optional, default `{default}`"),
+                (Role::Named, Some(None)) => "optional, default".to_string(),
+                (Role::Named, None) if optional_option => "optional".to_string(),
+                (Role::Named, None) => "required".to_string(),
+            };
+
+            Some(Prop {
+                maybe: role == Role::Named && optional_option,
+                name,
+                ty: ty.replace('|', "\\|"),
+                role,
+                kind,
+                required,
+                docs: doc_text(&typed.attrs).replace('|', "\\|"),
+            })
+        })
+        .collect()
+}
+
+fn example(pascal: &str, props: &[Prop]) -> Vec<String> {
+    let mut arguments: Vec<String> = props.iter().filter(|prop| prop.role == Role::Positional).map(|prop| prop.name.clone()).collect();
+    arguments.extend(
+        props
+            .iter()
+            .filter(|prop| prop.role == Role::Named && prop.required)
+            .map(|prop| format!("{} = …", prop.name)),
+    );
+
+    let body = if props.iter().any(|prop| prop.role == Role::Children) { " { … }" } else { ";" };
+
+    match arguments.len() {
+        0 => vec![format!("{pascal}{body}")],
+        1..=2 => vec![format!("{pascal}({}){body}", arguments.join(", "))],
+        _ => std::iter::once(format!("{pascal}("))
+            .chain(arguments.iter().map(|argument| format!("    {argument},")))
+            .chain(std::iter::once(format!("){body}")))
+            .collect(),
+    }
+}
+
+fn component_docs(pascal: &str, func: &ItemFn) -> Vec<String> {
+    let props = props(func);
+    let mut lines = vec![" # Example".to_string(), " ```rust,ignore".to_string()];
+    lines.extend(example(pascal, &props).into_iter().map(|line| format!(" {line}")));
+    lines.push(" ```".to_string());
+
+    if props.is_empty() {
+        return lines;
+    }
+
+    let described = props.iter().any(|prop| !prop.docs.is_empty());
+    lines.push(String::new());
+    lines.push(" # Props".to_string());
+    lines.push(String::new());
+    lines.push(if described { " | Prop | Type | Kind | Description |" } else { " | Prop | Type | Kind |" }.to_string());
+    lines.push(if described { " |---|---|---|---|" } else { " |---|---|---|" }.to_string());
+    for prop in &props {
+        let row = format!(" | `{}` | `{}` | {} |", prop.name, prop.ty, prop.kind);
+        lines.push(if described { format!("{row} {} |", prop.docs) } else { row });
+    }
+
+    if props.iter().any(|prop| prop.maybe) {
+        lines.push(String::new());
+        lines.push(" Optional props also have a `maybe_` setter that takes an `Option`.".to_string());
+    }
+
+    lines
 }
 
 fn count_elided_lifetimes(func: &ItemFn) -> usize {
