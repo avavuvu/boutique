@@ -21,7 +21,7 @@ fn button_link() {
 #[test]
 fn button_link_accepts_a_string() {
     let id = 7;
-    let result = html! { Button(href = format!("/items/{id}")) { "Open" } };
+    let result = html! { Button(href = &format!("/items/{id}")) { "Open" } };
     assert_eq!(result.into_string(), r#"<a class="button" href="/items/7">Open</a>"#);
 }
 

@@ -4,8 +4,8 @@ use crate::{Attrs, component, html};
 
 #[component]
 pub fn button(
-    #[builder(into)] href: Option<String>,
-    #[builder(into)] post: Option<String>,
+    href: Option<&str>,
+    post: Option<&str>,
     #[builder(default)] submit: bool,
     #[builder(default)] disabled: bool,
     #[builder(default)] attrs: Attrs,

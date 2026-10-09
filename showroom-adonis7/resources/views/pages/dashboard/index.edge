@@ -1,0 +1,45 @@
+@layout()
+    <div>
+        <div>
+            <div>
+                <h1>Your newsletters</h1>
+                @if(user.username)
+                    <p>
+                        Public page:
+                        <a
+                            href="{{
+                                env('APP_URL').replace(
+                                    '//' + env('HOST'),
+                                    '//' + user.username + '.' + env('HOST'),
+                                )
+                            }}"
+                        >
+                            {{ user.username }}.{{ env('HOST') }}
+                        </a>
+                    </p>
+                @end
+            </div>
+            <form method="POST" action="/logout">
+                {{ csrfField() }}
+                @!button({ text: 'Logout', type: 'submit' })
+            </form>
+        </div>
+        @if(newsletters.length === 0)
+            <p>No newsletters yet.</p>
+        @else
+            <ul>
+                @each(newsletter in newsletters)
+                    <li>
+                        <div>
+                            <p>{{ newsletter.title }}</p>
+                            @if(newsletter.subtitle)
+                                <p>{{ newsletter.subtitle }}</p>
+                            @end
+                        </div>
+                        <a href="/edit/{{ newsletter.id }}">Edit</a>
+                    </li>
+                @end
+            </ul>
+        @end
+    </div>
+@end

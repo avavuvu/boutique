@@ -1,0 +1,17 @@
+@layout()
+    <div>
+        <nav><a href="/">← {{ user.fullName ?? user.username }}</a></nav>
+
+        <article>
+            <header>
+                <h1>{{ newsletter.title }}</h1>
+                @if(newsletter.subtitle)
+                    <p>{{ newsletter.subtitle }}</p>
+                @end
+            </header>
+            
+            content here
+
+        </article>
+    </div>
+@end

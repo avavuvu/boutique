@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+
+@import 'tailwindcss';
+@import './prose.css';
+
+@variant dark (&: where([data-theme= 'dark'], [data-theme= 'dark'] *));
+
+@theme {
+    --default-font-family: 'Times', 'Times New Roman', serif;
+    --font-serif: 'Times', 'Times New Roman', serif;
+    --font-title: 'Playfair Display', 'Georgia', serif;
+    --color-error: var(--color-red-800);
+    --color-subdued: var(--color-gray-500);
+    --color-primary: #92ca3a;
+    --color-primary-subdued: #b9ef62;
+
+    --color-body: white;
+    --color-text: black;
+
+    --color-border: #000000;
+    --color-surface: #ffffff;
+    --color-surface-hover: var(--color-gray-100);
+    --color-surface-subtle: var(--color-gray-50);
+}
+
+[data-theme='dark'] {
+    --color-body: #222222;
+    --color-border: #ffffff;
+    --color-surface: #1a1a1a;
+    --color-surface-hover: #2a2a2a;
+    --color-surface-subtle: #222222;
+    --color-subdued: var(--color-gray-400);
+    --color-text: white;
+}
+
+@layer base {
+    body[data-theme='light'] {
+        background-color: white;
+        color: black;
+    }
+
+    body[data-theme='dark'] {
+        background-color: var(--color-body);
+        color: white;
+    }
+}
+
+html,
+body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}

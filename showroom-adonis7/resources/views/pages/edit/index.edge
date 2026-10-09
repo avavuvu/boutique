@@ -1,0 +1,8 @@
+@layout()
+    <div class="max-w-3xl mx-auto px-4 py-8">
+        <div data-island="Editor" data-props="{{ { newsletterId: newsletter.id } }}" }}}}>}}</div>
+    </div>
+    @pushOnceTo('islands')
+        @vite(['resources/js/islands.ts'])
+    @end
+@end
