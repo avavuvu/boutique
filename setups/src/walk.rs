@@ -6,7 +6,7 @@ use std::{
 
 use bq_html::{
     ast::{
-        Attribute, AttributeType, ControlFlowKind, DiagnosticParse, Element, ElementBody, ElementName, IfOrBlock,
+        Attribute, AttributeType, ComponentArg, ControlFlowKind, DiagnosticParse, Element, ElementBody, ElementName, IfOrBlock,
         Markup, Markups, NoElement,
     },
     proc_macro2_diagnostics::Diagnostic,
@@ -318,7 +318,12 @@ impl<'a> Walker<'a> {
             None => Tags::one("div"),
             Some(ElementName::Static(name)) => Tags::one(name.to_string()),
             Some(ElementName::Dynamic { expr, .. }) => literal_tags(expr),
-            Some(ElementName::Component { path, .. }) => {
+            Some(ElementName::Component { path, args, .. }) => {
+                for arg in args {
+                    match arg {
+                        ComponentArg::Positional(expr) | ComponentArg::Named { value: expr, .. } => self.nested(expr, cx),
+                    }
+                }
                 let name = path.segments.last().map(|segment| segment.ident.to_string()).unwrap_or_default();
                 return self.component(&name, element, &location, cx);
             }

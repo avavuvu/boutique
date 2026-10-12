@@ -108,6 +108,19 @@ fn children_belong_to_the_code_that_wrote_them() {
 }
 
 #[test]
+fn markup_in_component_arguments_belongs_to_the_caller() {
+    let (types, _, warnings) = ok(&[
+        (0, "menu.rs", MENU),
+        (0, "a.rs", r##"
+            setup!(Toolbar);
+            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu(label = html! { span bq-ref="current" {} }) {} } } }
+        "##),
+    ]);
+    assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { current: "span" }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
 fn a_nearer_setup_with_the_same_name_is_an_error() {
     let errors = run(&[
         (0, "menu.rs", MENU),
