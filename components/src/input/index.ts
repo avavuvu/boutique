@@ -9,6 +9,6 @@ export const passwordToggle: PasswordToggle = (shell) => ({
 
         const hidden = input.type === "password";
         input.type = hidden ? "text" : "password";
-        button.textContent = hidden ? "Hide" : "Show";
+        button.setAttribute("aria-pressed", String(hidden));
     },
 });

@@ -205,8 +205,8 @@ fn capitalised_function_needs_no_alias() {
 
 #[test]
 fn exported_aliases() {
-    let result = html! { bq_components::Input("q") data-x="1"; }.into_string();
-    assert!(result.contains(r#"<input id="q" name="q" type="text" data-x="1" autocomplete="q">"#), "{result}");
+    let result = html! { bq_components::Input("q", label = "Search") data-x="1"; }.into_string();
+    assert!(result.contains(r#"<input id="q" name="q" type="text" aria-describedby="q-error" data-x="1">"#), "{result}");
 }
 
 #[test]

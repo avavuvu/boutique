@@ -37,7 +37,7 @@ impl Kind {
 
     fn autocomplete(self, name: &str) -> Option<&str> {
         match self {
-            Kind::Text => Some(name),
+            Kind::Text => AUTOFILL.contains(&name).then_some(name),
             Kind::Email => Some("email"),
             Kind::Password => Some("current-password"),
             _ => None,
@@ -45,16 +45,53 @@ impl Kind {
     }
 }
 
+const AUTOFILL: &[&str] = &[
+    "name",
+    "given-name",
+    "family-name",
+    "nickname",
+    "username",
+    "email",
+    "tel",
+    "url",
+    "organization",
+    "street-address",
+    "postal-code",
+    "country-name",
+    "one-time-code",
+    "current-password",
+    "new-password",
+];
+
+fn check_name(id: &str, label: Option<&str>, attrs: &Attrs) {
+    debug_assert!(
+        label.is_some() || attrs.has("aria-label") || attrs.has("aria-labelledby"),
+        "the field {id:?} has no accessible name: give it a `label` or an `aria-label` attribute"
+    );
+}
+
+fn described_by(id: &str, hint: Option<&str>) -> String {
+    match hint {
+        Some(_) => format!("{id}-hint {id}-error"),
+        None => format!("{id}-error"),
+    }
+}
+
 #[component]
 pub fn input(
     #[builder(start_fn)] name: &str,
+    id: Option<&str>,
     #[builder(default)] kind: Kind,
     label: Option<&str>,
     hint: Option<&str>,
+    error: Option<&str>,
     prefix: Option<&str>,
     suffix: Option<&str>,
     #[builder(default)] attrs: Attrs,
 ) -> Markup {
+    let id = id.unwrap_or(name);
+    check_name(id, label, &attrs);
+
     let mut attrs = attrs;
     if let Some(autocomplete) = kind.autocomplete(name) {
         attrs.set_default("autocomplete", autocomplete);
@@ -62,18 +99,33 @@ pub fn input(
 
     let is_password = kind == Kind::Password;
     let control = html! {
-        input #(name) name=(name) type=(kind.as_str()) .password-input[is_password] (..attrs);
+        input
+            #(id)
+            name=(name)
+            type=(kind.as_str())
+            .password-input[is_password]
+            aria-describedby=(described_by(id, hint))
+            aria-invalid=[error.map(|_| "true")]
+            (..attrs);
     };
 
     html! {
         div.input-component {
             @if let Some(label) = label {
-                label for=(name) { (label) }
+                label for=(id) { (label) }
             }
             @if is_password {
                 div.shell.password bq-setup=(PasswordToggle) {
                     (control)
-                    button type="button" tabindex="-1" bq-on:click="toggle" { "Show" }
+                    button
+                        type="button"
+                        aria-label="Show password"
+                        aria-pressed="false"
+                        aria-controls=(id)
+                        bq-on:click="toggle"
+                    {
+                        "Show"
+                    }
                 }
             } @else {
                 div.shell.prefixed[prefix.is_some() || suffix.is_some()] {
@@ -83,9 +135,11 @@ pub fn input(
                 }
             }
             @if let Some(hint) = hint {
-                p.hint { (hint) }
+                p.hint id={ (id) "-hint" } { (hint) }
             }
-            p.error id={ (name) "-error" } {}
+            p.error id={ (id) "-error" } aria-live="polite" {
+                @if let Some(error) = error { (error) }
+            }
         }
     }
 }
@@ -93,25 +147,38 @@ pub fn input(
 #[component]
 pub fn textarea(
     #[builder(start_fn)] name: &str,
+    id: Option<&str>,
     label: Option<&str>,
     hint: Option<&str>,
+    error: Option<&str>,
     value: Option<&str>,
     #[builder(default)] attrs: Attrs,
 ) -> Markup {
+    let id = id.unwrap_or(name);
+    check_name(id, label, &attrs);
+
     html! {
         div.input-component {
             @if let Some(label) = label {
-                label for=(name) { (label) }
+                label for=(id) { (label) }
             }
             div.shell {
-                textarea #(name) name=(name) (..attrs) {
+                textarea
+                    #(id)
+                    name=(name)
+                    aria-describedby=(described_by(id, hint))
+                    aria-invalid=[error.map(|_| "true")]
+                    (..attrs)
+                {
                     @if let Some(value) = value { (value) }
                 }
             }
             @if let Some(hint) = hint {
-                p.hint { (hint) }
+                p.hint id={ (id) "-hint" } { (hint) }
             }
-            p.error id={ (name) "-error" } {}
+            p.error id={ (id) "-error" } aria-live="polite" {
+                @if let Some(error) = error { (error) }
+            }
         }
     }
 }

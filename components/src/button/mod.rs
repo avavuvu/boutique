@@ -11,6 +11,11 @@ pub fn button(
     #[builder(default)] attrs: Attrs,
     #[builder(default = html! {})] children: Markup,
 ) -> Markup {
+    debug_assert!(
+        href.is_none() || post.is_none(),
+        "Button cannot have both `href` and `post`: a link cannot send a POST form"
+    );
+
     let link = href.is_some();
     let kind = match (link, submit || post.is_some()) {
         (true, _) => None,
@@ -21,7 +26,7 @@ pub fn button(
     let element = html! {
         @element(if link { "a" } else { "button" })
             .button
-            href=[href]
+            href=[href.filter(|_| !disabled)]
             type=[kind]
             disabled[disabled && !link]
             aria-disabled=[(disabled && link).then_some("true")]
