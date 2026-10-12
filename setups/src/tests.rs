@@ -443,7 +443,10 @@ fn handler_errors() {
         (r#"bq-on:click|self|document="a""#, "`self` cannot be used with `window` or `document`"),
         (r#"bq-on:click|once|once="a""#, "the modifier `once` is given two times"),
         (r#"bq-on:htmx:afterSwap="a""#, "event names must be lowercase"),
-        (r#"bq-on:click="save-it""#, "the handler must be a JavaScript name"),
+        (r#"bq-on:click="saveIt""#, r#"the handler must be kebab-case, for example bq-on:click="save-it""#),
+        (r#"bq-on:click="menu.saveIt""#, r#"for example bq-on:click="menu.save-it""#),
+        (r#"bq-on:click="save_it""#, "the handler must be kebab-case"),
+        (r#"bq-on:click="save-""#, "the handler must be kebab-case"),
         (r#"bq-on:click="DirtyForm.save""#, "the setup name must be kebab-case"),
         (r#"bq-on:click=(name)"#, "bq-on:click needs a fixed string"),
         (r#"bq-on:click="disconnect""#, "`disconnect` is reserved"),
@@ -456,6 +459,18 @@ fn handler_errors() {
         assert_eq!(errors.len(), 1, "{attribute}: {errors:?}");
         assert!(errors[0].contains(expected), "{attribute}: {errors:?}");
     }
+}
+
+#[test]
+fn kebab_handlers_become_camel_case() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(Editor);
+        fn view() -> Markup { html! { div bq-setup=(Editor) { input bq-on:change="files-picked" bq-on:input="editor.mark-dirty-2"; } } }
+    "##)]);
+    assert_eq!(
+        setup(&types, "Editor"),
+        r#"Setup<"div", {}, { filesPicked: { event: "change"; tag: "input" }; markDirty2: { event: "input"; tag: "input" } }>"#
+    );
 }
 
 #[test]

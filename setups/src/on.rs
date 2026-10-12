@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use heck::{ToKebabCase, ToLowerCamelCase};
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Target {
     Element,
@@ -24,6 +26,7 @@ pub struct On {
     pub target: Target,
     pub setup: Option<String>,
     pub handler: String,
+    pub key: String,
 }
 
 const EVENT_MODIFIERS: [&str; 6] = ["prevent", "stop", "self", "once", "passive", "capture"];
@@ -49,6 +52,13 @@ const POINTER: [&str; 15] = [
     "touchmove",
     "touchcancel",
 ];
+
+fn kebab(text: &str) -> bool {
+    text.chars().next().is_some_and(|first| first.is_ascii_lowercase())
+        && !text.ends_with('-')
+        && !text.contains("--")
+        && text.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-')
+}
 
 fn single_key(modifier: &str) -> bool {
     modifier.len() == 1 && modifier.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
@@ -115,23 +125,22 @@ pub fn parse(attribute: &str, value: &str) -> Result<On, String> {
         None => (None, value.to_string()),
     };
 
-    let valid_handler = handler.chars().next().is_some_and(|first| first.is_ascii_alphabetic() || first == '_' || first == '$')
-        && handler.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '$');
-    if !valid_handler {
-        return Err(format!("{attribute}=\"{value}\": the handler must be a JavaScript name, for example bq-on:click=\"save\""));
+    if !kebab(&handler) {
+        let example = match &setup {
+            Some(setup) => format!("{setup}.{}", handler.to_kebab_case()),
+            None => handler.to_kebab_case(),
+        };
+        return Err(format!("{attribute}=\"{value}\": the handler must be kebab-case, for example {attribute}=\"{example}\""));
     }
     if handler == "disconnect" {
         return Err(format!("{attribute}=\"{value}\": `disconnect` is reserved for the code that runs when the setup stops"));
     }
-    if let Some(setup) = &setup {
-        let valid_setup = setup.chars().next().is_some_and(|first| first.is_ascii_lowercase())
-            && !setup.ends_with('-')
-            && !setup.contains("--")
-            && setup.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
-        if !valid_setup {
-            return Err(format!("{attribute}=\"{value}\": the setup name must be kebab-case, for example \"dirty-form.save\""));
-        }
+    if let Some(setup) = &setup
+        && !kebab(setup)
+    {
+        return Err(format!("{attribute}=\"{value}\": the setup name must be kebab-case, for example \"dirty-form.save\""));
     }
 
-    Ok(On { attribute: attribute.to_string(), event, target, setup, handler })
+    let key = handler.to_lower_camel_case();
+    Ok(On { attribute: attribute.to_string(), event, target, setup, handler, key })
 }

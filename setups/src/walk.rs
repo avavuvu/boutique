@@ -444,7 +444,7 @@ impl<'a> Walker<'a> {
             }
         };
         if let Some(owner) = owner {
-            self.usages[owner].handlers.push(HandlerUse { name: on.handler, event: on.event, target: on.target, tags: tags.clone() });
+            self.usages[owner].handlers.push(HandlerUse { name: on.key, event: on.event, target: on.target, tags: tags.clone() });
         }
     }
 

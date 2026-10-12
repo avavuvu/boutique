@@ -68,6 +68,17 @@ test("handlers bind on the setup element and inside it", async () => {
     ]);
 });
 
+test("kebab-case handler names call camelCase handlers", async () => {
+    const calls: string[] = [];
+    add("kebab", () => ({ filesPicked: () => calls.push("plain"), markDirty: () => calls.push("named") }));
+    const host = await mount(`<div bq-setup="kebab"><input bq-on:change="files-picked" bq-on:input="kebab.mark-dirty"></div>`);
+    const input = host.querySelector("input")!;
+
+    input.dispatchEvent(new window.Event("change") as unknown as Event);
+    input.dispatchEvent(new window.Event("input") as unknown as Event);
+    assert.deepStrictEqual(calls, ["plain", "named"]);
+});
+
 test("setups that return nothing still run", async () => {
     let ran = false;
     add("plain", () => {

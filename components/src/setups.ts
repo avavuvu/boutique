@@ -104,8 +104,8 @@ function parseBinding(attribute: string, value: string): Binding {
     const [event = "", ...modifiers] = attribute.slice(ON.length).split("|");
     const dot = value.indexOf(".");
     return dot < 0
-        ? { event, modifiers: new Set(modifiers), handler: value.trim() }
-        : { event, modifiers: new Set(modifiers), setup: value.slice(0, dot).trim(), handler: value.slice(dot + 1).trim() };
+        ? { event, modifiers: new Set(modifiers), handler: camel(value.trim()) }
+        : { event, modifiers: new Set(modifiers), setup: value.slice(0, dot).trim(), handler: camel(value.slice(dot + 1).trim()) };
 }
 
 function ownerOf(element: Element, setup: string | undefined): [Element, string] | undefined {
