@@ -4,7 +4,7 @@ use bq_html::ast::{Element, Markups};
 use heck::ToUpperCamelCase;
 use syn::visit::Visit;
 
-use crate::walk::{html_blocks, parse};
+use crate::walk::{Flags, html_blocks, parse};
 
 pub struct File {
     pub name: String,
@@ -15,12 +15,16 @@ pub struct Function {
     pub file: usize,
     pub component: bool,
     pub blocks: Vec<usize>,
+    pub bindings: HashMap<String, usize>,
 }
 
 pub struct Block {
     pub file: usize,
     pub function: Option<usize>,
     pub markups: Markups<Element>,
+    pub binding: Option<String>,
+    pub optional: bool,
+    pub many: bool,
 }
 
 #[derive(Default)]
@@ -36,7 +40,8 @@ impl Index {
     pub fn add_file(&mut self, name: String, root: usize, parsed: &syn::File) {
         let file = self.files.len();
         self.files.push(File { name, root });
-        let mut collector = Collector { index: self, file, local: HashMap::new(), current: None };
+        let mut collector =
+            Collector { index: self, file, local: HashMap::new(), current: None, flags: Flags::default(), binding: None };
         collector.visit_file(parsed);
     }
 
@@ -45,7 +50,7 @@ impl Index {
         let component = item.attrs.iter().any(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "component"));
 
         let index = *local.entry(name.clone()).or_insert_with(|| {
-            self.functions.push(Function { file, component: false, blocks: Vec::new() });
+            self.functions.push(Function { file, component: false, blocks: Vec::new(), bindings: HashMap::new() });
             let index = self.functions.len() - 1;
             self.by_name.entry(name.clone()).or_default().push(index);
             index
@@ -59,12 +64,16 @@ impl Index {
         index
     }
 
-    fn block(&mut self, file: usize, function: Option<usize>, tokens: proc_macro2::TokenStream) {
+    fn block(&mut self, file: usize, function: Option<usize>, tokens: proc_macro2::TokenStream, flags: Flags, binding: Option<String>) {
         let Some(markups) = parse(tokens) else { return };
-        self.blocks.push(Block { file, function, markups });
+        let binding = binding.filter(|_| function.is_some());
+        self.blocks.push(Block { file, function, markups, binding: binding.clone(), optional: flags.optional, many: flags.many });
         let block = self.blocks.len() - 1;
         if let Some(function) = function {
             self.functions[function].blocks.push(block);
+            if let Some(binding) = binding {
+                self.functions[function].bindings.insert(binding, block);
+            }
         }
     }
 }
@@ -74,6 +83,8 @@ struct Collector<'i> {
     file: usize,
     local: HashMap<String, usize>,
     current: Option<usize>,
+    flags: Flags,
+    binding: Option<String>,
 }
 
 impl<'ast> Visit<'ast> for Collector<'_> {
@@ -90,16 +101,38 @@ impl<'ast> Visit<'ast> for Collector<'_> {
         self.current = previous;
     }
 
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        let name = match (&local.pat, &local.init) {
+            (syn::Pat::Ident(pat), Some(init)) if is_html(&init.expr) => Some(pat.ident.to_string()),
+            _ => None,
+        };
+        let previous = std::mem::replace(&mut self.binding, name);
+        syn::visit::visit_local(self, local);
+        self.binding = previous;
+    }
+
+    fn visit_expr(&mut self, expr: &'ast syn::Expr) {
+        let saved = self.flags;
+        self.flags.enter(expr);
+        syn::visit::visit_expr(self, expr);
+        self.flags = saved;
+    }
+
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        let binding = self.binding.take();
         if mac.path.segments.last().is_some_and(|segment| segment.ident == "html") {
-            self.index.block(self.file, self.current, mac.tokens.clone());
+            self.index.block(self.file, self.current, mac.tokens.clone(), self.flags, binding);
         } else {
             let mut blocks = Vec::new();
             html_blocks(mac.tokens.clone(), &mut blocks);
             for tokens in blocks {
-                self.index.block(self.file, self.current, tokens);
+                self.index.block(self.file, self.current, tokens, self.flags, None);
             }
         }
         syn::visit::visit_macro(self, mac);
     }
+}
+
+fn is_html(expr: &syn::Expr) -> bool {
+    matches!(expr, syn::Expr::Macro(mac) if mac.mac.path.segments.last().is_some_and(|segment| segment.ident == "html"))
 }

@@ -1,7 +1,6 @@
 use std::{
-    cell::{Cell, RefCell},
+    cell::Cell,
     collections::{BTreeSet, HashSet},
-    rc::Rc,
 };
 
 use bq_html::{
@@ -54,21 +53,6 @@ pub struct RefUse {
     pub many: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Ref,
-    Handler,
-}
-
-pub struct Claim {
-    pub kind: Kind,
-    pub name: String,
-    pub owner: usize,
-    pub between: Vec<usize>,
-    pub text: String,
-    pub location: String,
-}
-
 #[derive(Clone, Copy)]
 struct Owner {
     usage: usize,
@@ -78,11 +62,13 @@ struct Owner {
 
 #[derive(Clone, Default)]
 struct Scope {
-    lexical: Vec<usize>,
     path: Vec<Vec<Owner>>,
 }
 
 impl Scope {
+    fn nearest(&self) -> Vec<usize> {
+        self.path.first().map(|element| element.iter().map(|owner| owner.usage).collect()).unwrap_or_default()
+    }
     fn flagged(&self, optional: bool, many: bool) -> Scope {
         let mut scope = self.clone();
         for owner in scope.path.iter_mut().flatten() {
@@ -94,17 +80,6 @@ impl Scope {
 
     fn owner(&self, usage: usize) -> Option<Owner> {
         self.path.iter().flatten().find(|owner| owner.usage == usage).copied()
-    }
-
-    fn between(&self, usage: usize) -> Vec<usize> {
-        let mut between = Vec::new();
-        for element in &self.path {
-            between.extend(element.iter().filter(|owner| owner.usage != usage).map(|owner| owner.usage));
-            if element.iter().any(|owner| owner.usage == usage) {
-                break;
-            }
-        }
-        between
     }
 }
 
@@ -133,30 +108,16 @@ struct CallAttrs {
 #[derive(Clone)]
 struct Outside {
     attrs: CallAttrs,
-    lexical: Vec<usize>,
     function: Option<usize>,
-    created: Rc<RefCell<Vec<usize>>>,
 }
 
 struct Frame<'c> {
     outside: Vec<Outside>,
-    created: Rc<RefCell<Vec<usize>>>,
+    args: Vec<(String, &'c Expr, Cell<bool>)>,
     children: Option<&'c Markups<Element>>,
     caller: Cx<'c>,
     attrs_used: Cell<bool>,
     children_used: Cell<bool>,
-}
-
-fn owners_or(own: &[usize], outer: &[usize]) -> Vec<usize> {
-    if own.is_empty() { outer.to_vec() } else { own.to_vec() }
-}
-
-fn children_lexical(created: &[usize], caller: &[usize], path: &[Vec<Owner>]) -> Vec<usize> {
-    let lexical = owners_or(created, caller);
-    if !lexical.is_empty() {
-        return lexical;
-    }
-    path.first().map(|element| element.iter().map(|owner| owner.usage).collect()).unwrap_or_default()
 }
 
 pub fn parse(tokens: TokenStream) -> Option<Markups<Element>> {
@@ -185,8 +146,7 @@ pub struct Walker<'a> {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub reached: HashSet<usize>,
-    pub claims: Vec<Claim>,
-    pub followed: HashSet<usize>,
+    followed: HashSet<usize>,
     orphans: Vec<(Option<usize>, String)>,
     stack: Vec<usize>,
 }
@@ -199,7 +159,6 @@ impl<'a> Walker<'a> {
             errors: Vec::new(),
             warnings: Vec::new(),
             reached: HashSet::new(),
-            claims: Vec::new(),
             followed: HashSet::new(),
             orphans: Vec::new(),
             stack: Vec::new(),
@@ -212,13 +171,28 @@ impl<'a> Walker<'a> {
         self.markups(&block.markups, &cx);
     }
 
-    pub fn finish(mut self) -> (Vec<Usage>, Vec<Claim>, Vec<String>, Vec<String>) {
+    pub fn finish(mut self) -> (Vec<Usage>, Vec<String>, Vec<String>) {
         for (function, message) in std::mem::take(&mut self.orphans) {
             if !function.is_some_and(|function| self.followed.contains(&function)) {
-                self.warnings.push(message);
+                self.errors.push(message);
             }
         }
-        (self.usages, self.claims, unique(self.errors), unique(self.warnings))
+        (self.usages, unique(self.errors), unique(self.warnings))
+    }
+
+    pub fn component_alone(&mut self, function: usize) {
+        let cx = Cx { scope: Scope::default(), frame: None, file: self.index.functions[function].file, function: Some(function) };
+        self.function_blocks(function, &cx);
+    }
+
+    fn function_blocks(&mut self, function: usize, cx: &Cx) {
+        for &block in &self.index.functions[function].blocks {
+            let block = &self.index.blocks[block];
+            if block.binding.is_none() {
+                let scope = cx.scope.flagged(block.optional, block.many);
+                self.markups(&block.markups, &Cx { scope, ..cx.clone() });
+            }
+        }
     }
 
     fn location(&self, file: usize, span: Span) -> String {
@@ -277,10 +251,17 @@ impl<'a> Walker<'a> {
         if let Some(frame) = cx.frame.filter(|_| is_children(expr)) {
             frame.children_used.set(true);
             if let Some(children) = frame.children {
-                let lexical = children_lexical(&frame.created.borrow(), &frame.caller.scope.lexical, &cx.scope.path);
-                let inner = Cx { scope: Scope { lexical, path: cx.scope.path.clone() }, ..frame.caller.clone() };
-                self.markups(children, &inner);
+                self.markups(children, &Cx { scope: cx.scope.clone(), ..frame.caller.clone() });
             }
+            return;
+        }
+
+        if let Some(frame) = cx.frame
+            && let Some(name) = spliced_name(expr)
+            && let Some((_, value, used)) = frame.args.iter().find(|(arg, ..)| *arg == name)
+        {
+            used.set(true);
+            self.nested(value, &Cx { scope: cx.scope.clone(), ..frame.caller.clone() });
             return;
         }
 
@@ -292,10 +273,8 @@ impl<'a> Walker<'a> {
         {
             self.followed.insert(function);
             self.stack.push(function);
-            let followed = Cx { frame: None, file: self.index.functions[function].file, ..cx.clone() };
-            for &block in &self.index.functions[function].blocks {
-                self.markups(&self.index.blocks[block].markups, &followed);
-            }
+            let followed = Cx { frame: None, file: self.index.functions[function].file, function: Some(function), ..cx.clone() };
+            self.function_blocks(function, &followed);
             self.stack.pop();
         }
 
@@ -303,11 +282,22 @@ impl<'a> Walker<'a> {
     }
 
     fn nested(&mut self, expr: &Expr, cx: &Cx) {
+        if let Expr::Path(path) = expr
+            && let Some(name) = path.path.get_ident()
+            && let Some(function) = cx.function
+            && let Some(&block) = self.index.functions[function].bindings.get(&name.to_string())
+        {
+            let block = &self.index.blocks[block];
+            let scope = cx.scope.flagged(block.optional, block.many);
+            self.markups(&block.markups, &Cx { scope, ..cx.clone() });
+            return;
+        }
+
         let mut finder = MacroFinder::default();
         finder.visit_expr(expr);
-        for tokens in finder.blocks {
+        for (tokens, optional, many) in finder.blocks {
             if let Some(markups) = parse(tokens) {
-                self.markups(&markups, cx);
+                self.markups(&markups, &Cx { scope: cx.scope.flagged(optional, many), ..cx.clone() });
             }
         }
     }
@@ -319,13 +309,15 @@ impl<'a> Walker<'a> {
             Some(ElementName::Static(name)) => Tags::one(name.to_string()),
             Some(ElementName::Dynamic { expr, .. }) => literal_tags(expr),
             Some(ElementName::Component { path, args, .. }) => {
+                let mut named = Vec::new();
                 for arg in args {
                     match arg {
-                        ComponentArg::Positional(expr) | ComponentArg::Named { value: expr, .. } => self.nested(expr, cx),
+                        ComponentArg::Positional(expr) => self.nested(expr, cx),
+                        ComponentArg::Named { name, value, .. } => named.push((name.to_string(), value, Cell::new(false))),
                     }
                 }
                 let name = path.segments.last().map(|segment| segment.ident.to_string()).unwrap_or_default();
-                return self.component(&name, element, &location, cx);
+                return self.component(&name, element, named, &location, cx);
             }
         };
 
@@ -344,14 +336,8 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn component(&mut self, name: &str, element: &Element, location: &str, cx: &Cx) {
-        let created = Rc::new(RefCell::new(Vec::new()));
-        let mut outside = vec![Outside {
-            attrs: self.call_attrs(&element.attrs, location),
-            lexical: cx.scope.lexical.clone(),
-            function: cx.function,
-            created: created.clone(),
-        }];
+    fn component<'e>(&mut self, name: &str, element: &'e Element, args: Vec<(String, &'e Expr, Cell<bool>)>, location: &str, cx: &Cx) {
+        let mut outside = vec![Outside { attrs: self.call_attrs(&element.attrs, location), function: cx.function }];
         if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. }))
             && let Some(frame) = cx.frame
         {
@@ -365,10 +351,12 @@ impl<'a> Walker<'a> {
 
         let function = self.lookup(name, cx.file, true, location).filter(|function| !self.stack.contains(function));
         let Some(function) = function else {
+            for (_, value, _) in &args {
+                self.nested(value, cx);
+            }
             let inner = self.place(&Tags::Unknown, CallAttrs::default(), &outside, cx);
             if let Some(children) = children {
-                let lexical = children_lexical(&created.borrow(), &cx.scope.lexical, &inner.path);
-                self.markups(children, &Cx { scope: Scope { lexical, path: inner.path }, ..cx.clone() });
+                self.markups(children, &Cx { scope: inner, ..cx.clone() });
             }
             return;
         };
@@ -380,7 +368,7 @@ impl<'a> Walker<'a> {
 
         let frame = Frame {
             outside,
-            created: created.clone(),
+            args,
             children,
             caller: cx.clone(),
             attrs_used: Cell::new(false),
@@ -394,21 +382,24 @@ impl<'a> Walker<'a> {
         };
 
         self.stack.push(function);
-        for &block in &self.index.functions[function].blocks {
-            self.markups(&self.index.blocks[block].markups, &body);
-        }
+        self.function_blocks(function, &body);
         self.stack.pop();
 
-        let path = if frame.attrs_used.get() {
-            cx.scope.path.clone()
+        for (_, value, used) in &frame.args {
+            if !used.get() {
+                self.nested(value, cx);
+            }
+        }
+
+        let scope = if frame.attrs_used.get() {
+            cx.scope.clone()
         } else {
-            self.place(&Tags::Unknown, CallAttrs::default(), &frame.outside, cx).path
+            self.place(&Tags::Unknown, CallAttrs::default(), &frame.outside, cx)
         };
         if !frame.children_used.get()
             && let Some(children) = children
         {
-            let lexical = children_lexical(&created.borrow(), &cx.scope.lexical, &path);
-            self.markups(children, &Cx { scope: Scope { lexical, path }, ..cx.clone() });
+            self.markups(children, &Cx { scope, ..cx.clone() });
         }
     }
 
@@ -451,37 +442,30 @@ impl<'a> Walker<'a> {
 
     fn place(&mut self, tags: &Tags, own: CallAttrs, outside: &[Outside], cx: &Cx) -> Scope {
         for (reference, location) in own.refs {
-            self.reference(reference, tags, &cx.scope.lexical, &cx.scope, location, cx.function);
+            self.reference(reference, tags, &cx.scope, location, cx.function);
         }
         for item in outside {
             for (reference, location) in &item.attrs.refs {
-                self.reference(reference.clone(), tags, &item.lexical, &cx.scope, location.clone(), item.function);
+                self.reference(reference.clone(), tags, &cx.scope, location.clone(), item.function);
             }
         }
 
-        let own_usages = self.create(tags, own.setups);
-        let mut entry = own_usages.clone();
-        let mut outside_usages = Vec::new();
+        let mut setups = own.setups;
         for item in outside {
-            let usages = self.create(tags, item.attrs.setups.clone());
-            entry.extend(&usages);
-            *item.created.borrow_mut() = usages.clone();
-            outside_usages.push(usages);
+            setups.extend(item.attrs.setups.iter().cloned());
         }
-
-        let mut path = cx.scope.path.clone();
+        let entry = self.create(tags, setups);
+        let mut inner = cx.scope.clone();
         if !entry.is_empty() {
-            path.insert(0, entry.into_iter().map(|usage| Owner { usage, optional: false, many: false }).collect());
+            inner.path.insert(0, entry.into_iter().map(|usage| Owner { usage, optional: false, many: false }).collect());
         }
-        let inner = Scope { lexical: owners_or(&own_usages, &cx.scope.lexical), path };
 
         for (on, location) in own.ons {
-            self.handler(on, tags, &inner.lexical, &inner, location, cx.function);
+            self.handler(on, tags, &inner, location, cx.function);
         }
-        for (item, usages) in outside.iter().zip(outside_usages) {
-            let lexical = owners_or(&usages, &item.lexical);
+        for item in outside {
             for (on, location) in &item.attrs.ons {
-                self.handler(on.clone(), tags, &lexical, &inner, location.clone(), item.function);
+                self.handler(on.clone(), tags, &inner, location.clone(), item.function);
             }
         }
         inner
@@ -497,32 +481,25 @@ impl<'a> Walker<'a> {
             .collect()
     }
 
-    fn owner(
-        &mut self,
-        setup: Option<&str>,
-        lexical: &[usize],
-        scope: &Scope,
-        text: &str,
-        location: &str,
-        function: Option<usize>,
-    ) -> Option<(usize, bool)> {
+    fn owner(&mut self, setup: Option<&str>, scope: &Scope, text: &str, location: &str, function: Option<usize>) -> Option<usize> {
         if let Some(setup) = setup {
             let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name.to_kebab_case() == setup);
             if found.is_none() {
                 let message = format!("{location}: {text} is not inside an element with bq-setup=({})", setup.to_upper_camel_case());
                 self.orphans.push((function, message));
             }
-            return found.map(|owner| (owner.usage, false));
+            return found.map(|owner| owner.usage);
         }
 
-        let mut names: Vec<String> = lexical.iter().map(|&owner| self.usages[owner].name.to_kebab_case()).collect();
+        let nearest = scope.nearest();
+        let mut names: Vec<String> = nearest.iter().map(|&owner| self.usages[owner].name.to_kebab_case()).collect();
         names.dedup();
-        match (lexical, names.as_slice()) {
+        match (nearest.as_slice(), names.as_slice()) {
             ([], _) => {
                 self.orphans.push((function, format!("{location}: {text} is not inside an element with bq-setup")));
                 None
             }
-            ([owner, ..], [_]) => Some((*owner, true)),
+            ([owner, ..], [_]) => Some(*owner),
             _ => {
                 let (name, value) = text.split_once('=').unwrap_or((text, "\"\""));
                 let value = value.trim_matches('"');
@@ -536,36 +513,23 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn claim(&mut self, kind: Kind, name: &str, owner: usize, scope: &Scope, text: String, location: String) {
-        let between = scope.between(owner);
-        if !between.is_empty() {
-            self.claims.push(Claim { kind, name: name.to_string(), owner, between, text, location });
-        }
-    }
-
-    fn handler(&mut self, on: On, tags: &Tags, lexical: &[usize], scope: &Scope, location: String, function: Option<usize>) {
+    fn handler(&mut self, on: On, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
         let value = match &on.setup {
             Some(setup) => format!("{setup}.{}", on.handler),
             None => on.handler.clone(),
         };
         let text = format!("{}=\"{value}\"", on.attribute);
-        let Some((owner, unprefixed)) = self.owner(on.setup.as_deref(), lexical, scope, &text, &location, function) else {
+        let Some(owner) = self.owner(on.setup.as_deref(), scope, &text, &location, function) else {
             return;
         };
-        if unprefixed {
-            self.claim(Kind::Handler, &on.key, owner, scope, text, location);
-        }
         self.usages[owner].handlers.push(HandlerUse { name: on.key, event: on.event, target: on.target, tags: tags.clone() });
     }
 
-    fn reference(&mut self, reference: RefName, tags: &Tags, lexical: &[usize], scope: &Scope, location: String, function: Option<usize>) {
+    fn reference(&mut self, reference: RefName, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
         let text = format!("bq-ref=\"{}\"", reference.text);
-        let Some((owner, unprefixed)) = self.owner(reference.setup.as_deref(), lexical, scope, &text, &location, function) else {
+        let Some(owner) = self.owner(reference.setup.as_deref(), scope, &text, &location, function) else {
             return;
         };
-        if unprefixed {
-            self.claim(Kind::Ref, &reference.name, owner, scope, text, location);
-        }
         let flags = scope.owner(owner);
         self.usages[owner].refs.push(RefUse {
             name: reference.name,
@@ -657,16 +621,52 @@ impl<'a> Walker<'a> {
 
 #[derive(Default)]
 struct MacroFinder {
-    blocks: Vec<TokenStream>,
+    blocks: Vec<(TokenStream, bool, bool)>,
+    flags: Flags,
 }
 
 impl<'ast> Visit<'ast> for MacroFinder {
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        let mut found = Vec::new();
         if mac.path.segments.last().is_some_and(|segment| segment.ident == "html") {
-            self.blocks.push(mac.tokens.clone());
+            found.push(mac.tokens.clone());
         } else {
-            html_blocks(mac.tokens.clone(), &mut self.blocks);
+            html_blocks(mac.tokens.clone(), &mut found);
         }
+        let Flags { optional, many } = self.flags;
+        self.blocks.extend(found.into_iter().map(|tokens| (tokens, optional, many)));
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        let saved = self.flags;
+        self.flags.enter(expr);
+        syn::visit::visit_expr(self, expr);
+        self.flags = saved;
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct Flags {
+    pub optional: bool,
+    pub many: bool,
+}
+
+impl Flags {
+    pub fn enter(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Closure(_) | Expr::ForLoop(_) | Expr::While(_) | Expr::Loop(_) => self.many = true,
+            Expr::If(_) | Expr::Match(_) => self.optional = true,
+            _ => {}
+        }
+    }
+}
+
+fn spliced_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) if path.qself.is_none() => path.path.get_ident().map(ToString::to_string),
+        Expr::Reference(reference) => spliced_name(&reference.expr),
+        Expr::Paren(paren) => spliced_name(&paren.expr),
+        _ => None,
     }
 }
 

@@ -40,7 +40,7 @@ export type Setup<Tag extends string, Shape = {}, On = {}> = (
 
 type AnySetup = (element: any, refs: any, context: any) => unknown;
 
-type Entry = { tags: readonly string[]; refs: readonly string[]; many: readonly string[]; handlers: readonly string[] } & (
+type Entry = { tags: readonly string[]; many: readonly string[] } & (
     | { setup: AnySetup }
     | { load: () => Promise<AnySetup> }
 );
@@ -57,8 +57,6 @@ type Instance = {
 };
 
 type Binding = { key: string; text: string; event: string; modifiers: Set<string>; setup?: string; handler?: string };
-
-type Kind = "refs" | "handlers";
 
 const ATTRIBUTE = "bq-setup";
 const REF = "bq-ref";
@@ -94,6 +92,7 @@ export function context<T>(name: string): ContextKey<T> {
 }
 
 export function provide<T>(element: Element, key: ContextKey<T>, value: T): void {
+    if (!element.hasAttribute(ATTRIBUTE)) console.warn(`[bq] provide("${key.name}") needs an element with bq-setup`, element);
     let values = provided.get(element);
     if (!values) {
         values = new Map();
@@ -111,7 +110,10 @@ export function inject<T>(element: Element, key: ContextKey<T>): Promise<T> {
 }
 
 function attempt(entry: Waiting): boolean {
-    if (!entry.element.isConnected) return true;
+    if (!entry.element.isConnected) {
+        entry.reject(new DOMException(`[bq] the element was removed before "${entry.key.name}" was provided`, "AbortError"));
+        return true;
+    }
     for (let owner = entry.element.parentElement?.closest(`[${ATTRIBUTE}]`); owner; owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`)) {
         const values = provided.get(owner);
         if (values?.has(entry.key)) {
@@ -210,28 +212,24 @@ export function defineSetups(registry: Registry): void {
         console.warn(message, element);
     };
 
-    const ownerOf = (
-        element: Element,
-        start: Element | null,
-        kind: Kind,
-        setup: string | undefined,
-        name: string,
-        text: string,
-    ): [Element, string] | undefined => {
-        for (let owner = start?.closest(`[${ATTRIBUTE}]`) ?? null; owner; owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`) ?? null) {
-            const names = namesOf(owner);
-            if (setup !== undefined) {
-                if (names.includes(setup)) return [owner, setup];
-                continue;
+    const ownerOf = (element: Element, start: Element | null, setup: string | undefined, text: string): [Element, string] | undefined => {
+        if (setup !== undefined) {
+            for (let owner = start?.closest(`[${ATTRIBUTE}]`); owner; owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`)) {
+                if (namesOf(owner).includes(setup)) return [owner, setup];
             }
-            const users = names.filter((candidate) => registry[candidate]?.[kind].includes(name));
-            if (users.length === 1) return [owner, users[0]];
-            if (users.length > 1) {
-                warnOnce(element, text, `[bq] ${text} is used by more than one setup (${users.join(", ")}); write the setup name, for example "${users[0]}.${name}"`);
-                return undefined;
-            }
+            warnOnce(element, text, `[bq] ${text} is not inside an element with bq-setup="${setup}"`);
+            return undefined;
         }
-        warnOnce(element, text, setup === undefined ? `[bq] no setup above uses ${text}` : `[bq] ${text} is not inside an element with bq-setup="${setup}"`);
+        const owner = start?.closest(`[${ATTRIBUTE}]`);
+        const names = owner ? namesOf(owner) : [];
+        if (owner && names.length === 1) return [owner, names[0]];
+        warnOnce(
+            element,
+            text,
+            owner
+                ? `[bq] ${text} is inside more than one setup (${names.join(", ")}); write the setup name, for example "${names[0]}.name"`
+                : `[bq] ${text} is not inside an element with bq-setup`,
+        );
         return undefined;
     };
 
@@ -242,7 +240,7 @@ export function defineSetups(registry: Registry): void {
         for (const element of root.querySelectorAll(`[${REF}]`)) {
             for (const token of (element.getAttribute(REF) ?? "").split(/\s+/).filter(Boolean)) {
                 const { setup: prefix, name } = split(token);
-                const owner = ownerOf(element, element.parentElement, "refs", prefix, name, `bq-ref="${token}"`);
+                const owner = ownerOf(element, element.parentElement, prefix, `bq-ref="${token}"`);
                 if (owner?.[0] !== root || owner[1] !== setup) continue;
 
                 const existing = refs[name];
@@ -305,7 +303,7 @@ export function defineSetups(registry: Registry): void {
                     const owner =
                         binding.handler === undefined
                             ? nearest && ([nearest, namesOf(nearest)[0]] as [Element, string])
-                            : ownerOf(element, element, "handlers", binding.setup, binding.handler, binding.text);
+                            : ownerOf(element, element, binding.setup, binding.text);
                     if (!owner) continue;
                     const instance = running.get(owner[0])?.get(owner[1]);
                     if (instance?.ready) attach(instance, element, binding);

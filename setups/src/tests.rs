@@ -82,7 +82,7 @@ const MENU: &str = r##"
 "##;
 
 #[test]
-fn children_belong_to_the_code_that_wrote_them() {
+fn a_name_without_a_prefix_goes_to_the_nearest_setup() {
     let (types, registry, warnings) = ok(&[
         (0, "menu.rs", MENU),
         (0, "a.rs", r##"
@@ -90,31 +90,35 @@ fn children_belong_to_the_code_that_wrote_them() {
             fn view() -> Markup {
                 html! {
                     div bq-setup=(Toolbar) {
-                        Menu bq-ref="block-button" {
-                            @for block in blocks { button bq-ref="block-option" bq-on:click="set-block" {} }
+                        Menu bq-ref="toolbar.block-button" {
+                            @for block in blocks { button bq-ref="toolbar.block-option" bq-on:click="toolbar.set-block" {} }
+                            b bq-ref="item" {}
                         }
                     }
                 }
             }
         "##),
     ]);
-    assert_eq!(setup(&types, "Menu"), r#"Setup<"div", { button: "button"; panel: "div" }, { choose: { event: "click"; tag: "div" }; toggle: { event: "click"; tag: "button" } }>"#);
+    assert_eq!(
+        setup(&types, "Menu"),
+        r#"Setup<"div", { button: "button"; item: "b"; panel: "div" }, { choose: { event: "click"; tag: "div" }; toggle: { event: "click"; tag: "button" } }>"#
+    );
     assert_eq!(
         setup(&types, "Toolbar"),
         r#"Setup<"div", { blockButton: "button"; blockOption: ("button")[] }, { setBlock: { event: "click"; tag: "button" } }>"#
     );
-    assert!(registry.contains("\"menu\": {\n        tags: [\"div\"],\n        refs: [\"button\", \"panel\"],\n        many: [],\n        handlers: [\"choose\", \"toggle\"],"), "{registry}");
+    assert!(registry.contains("\"menu\": {\n        tags: [\"div\"],\n        many: [],\n"), "{registry}");
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
-fn a_followed_helper_is_not_also_walked_alone() {
+fn a_followed_helper_is_not_an_orphan() {
     let (types, _, warnings) = ok(&[
         (0, "menu.rs", MENU),
         (0, "a.rs", r##"
             setup!(Toolbar);
             fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu { (option()) } } } }
-            fn option() -> Markup { html! { b bq-ref="option" bq-on:click="pick" {} } }
+            fn option() -> Markup { html! { b bq-ref="toolbar.option" bq-on:click="toolbar.pick" {} } }
         "##),
     ]);
     assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { option: "b" }, { pick: { event: "click"; tag: "b" } }>"#);
@@ -122,44 +126,54 @@ fn a_followed_helper_is_not_also_walked_alone() {
 }
 
 #[test]
-fn markup_in_component_arguments_belongs_to_the_caller() {
+fn markup_in_component_arguments_is_walked_where_it_is_spliced() {
     let (types, _, warnings) = ok(&[
-        (0, "menu.rs", MENU),
+        (0, "label.rs", r##"
+            setup!(Labelled);
+            #[component]
+            pub fn labelled(label: Markup, children: Markup) -> Markup {
+                html! { div bq-setup=(Labelled) { button { (label) } (children) } }
+            }
+        "##),
         (0, "a.rs", r##"
             setup!(Toolbar);
-            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu(label = html! { span bq-ref="current" {} }) {} } } }
+            fn view() -> Markup {
+                html! { div bq-setup=(Toolbar) { Labelled(label = html! { span bq-ref="toolbar.current" {} i bq-ref="own" {} }) {} } }
+            }
         "##),
     ]);
     assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { current: "span" }>"#);
+    assert_eq!(setup(&types, "Labelled"), r#"Setup<"div", { own: "i" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
-fn a_nearer_setup_with_the_same_name_is_an_error() {
-    let errors = run(&[
-        (0, "menu.rs", MENU),
-        (0, "a.rs", r##"
-            setup!(Toolbar);
-            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu { b bq-ref="panel" bq-on:click="choose" {} } } } }
-        "##),
-    ])
-    .unwrap_err();
-    assert_eq!(
-        errors,
-        [
-            r#"a.rs:3: bq-ref="panel" is written for Toolbar, but Menu also uses the name `panel` and is nearer, so Menu would get it. Rename one of them, or write the setup name, for example "toolbar.panel""#,
-            r#"a.rs:3: bq-on:click="choose" is written for Toolbar, but Menu also uses the name `choose` and is nearer, so Menu would get it. Rename one of them, or write the setup name, for example "toolbar.choose""#,
-        ]
-    );
+fn markup_in_closures_and_branches_is_many_or_optional() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(List);
+        fn view() -> Markup {
+            html! {
+                ul bq-setup=(List) {
+                    (items.iter().map(|item| html! { li bq-ref="item" {} }).collect::<Markup>())
+                    (if open { html! { p bq-ref="note" {} } } else { html! {} })
+                }
+            }
+        }
+    "##)]);
+    assert_eq!(setup(&types, "List"), r#"Setup<"ul", { item: ("li")[]; note?: "p" }>"#);
+}
 
-    let (types, ..) = ok(&[
-        (0, "menu.rs", MENU),
-        (0, "a.rs", r##"
-            setup!(Toolbar);
-            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu { b bq-ref="toolbar.panel" bq-on:click="toolbar.choose" {} } } } }
-        "##),
-    ]);
-    assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { panel: "b" }, { choose: { event: "click"; tag: "b" } }>"#);
+#[test]
+fn markup_in_a_let_binding_is_walked_where_it_is_spliced() {
+    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+        setup!(Card);
+        fn view() -> Markup {
+            let title = html! { h2 bq-ref="title" {} };
+            html! { section bq-setup=(Card) { (title) } }
+        }
+    "##)]);
+    assert_eq!(setup(&types, "Card"), r#"Setup<"section", { title: "h2" }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
@@ -213,11 +227,12 @@ fn plain_function_is_followed_across_files() {
 }
 
 #[test]
-fn orphan_reference_warns() {
-    let (_, _, warnings) = ok(&[(0, "a.rs", r##"
+fn orphan_reference_is_an_error() {
+    let errors = run(&[(0, "a.rs", r##"
         fn lonely() -> Markup { html! { a bq-ref="link" {} } }
-    "##)]);
-    assert_eq!(warnings, [r#"a.rs:2: bq-ref="link" is not inside an element with bq-setup"#]);
+    "##)])
+    .unwrap_err();
+    assert_eq!(errors, [r#"a.rs:2: bq-ref="link" is not inside an element with bq-setup"#]);
 }
 
 #[test]
@@ -332,7 +347,7 @@ fn children_pass_through_nested_components() {
         "##),
         (0, "a.rs", r##"
             setup!(Extra);
-            fn view() -> Markup { html! { Outer bq-setup=(Extra) { span bq-ref="x" {} } } }
+            fn view() -> Markup { html! { Outer bq-setup=(Extra) { span bq-ref="extra.x" {} } } }
         "##),
     ]);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -523,13 +538,14 @@ fn two_setups_need_a_setup_name() {
 }
 
 #[test]
-fn handlers_outside_a_setup_warn() {
-    let (_, _, warnings) = ok(&[(0, "a.rs", r##"
+fn handlers_outside_a_setup_are_errors() {
+    let errors = run(&[(0, "a.rs", r##"
         setup!(DirtyForm);
         fn view() -> Markup { html! { div bq-setup=(DirtyForm) {} button bq-on:click="save" {} button bq-on:click="dirty-form.save" {} } }
-    "##)]);
+    "##)])
+    .unwrap_err();
     assert_eq!(
-        warnings,
+        errors,
         [
             r#"a.rs:3: bq-on:click="save" is not inside an element with bq-setup"#,
             r#"a.rs:3: bq-on:click="dirty-form.save" is not inside an element with bq-setup=(DirtyForm)"#,
