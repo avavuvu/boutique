@@ -431,6 +431,30 @@ fn call_site_handler_goes_to_the_spread_element() {
 }
 
 #[test]
+fn call_site_handler_with_the_same_attribute_is_dropped() {
+    let (types, _, warnings) = ok(&[
+        (0, "form.rs", r##"
+            setup!(DirtyForm);
+            #[component]
+            pub fn dirty_form(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+                html! { form bq-setup=(DirtyForm) bq-on:input="dirty-form.update" (..attrs) { (children) } }
+            }
+        "##),
+        (0, "a.rs", r##"
+            setup!(Preview);
+            fn view() -> Markup {
+                html! { DirtyForm bq-setup=(Preview) bq-on:input="preview.schedule" bq-on:input|capture="preview.early" {} }
+            }
+        "##),
+    ]);
+    assert_eq!(setup(&types, "Preview"), r#"Setup<"form", {}, { early: { event: "input"; tag: "form" } }>"#);
+    assert_eq!(
+        warnings,
+        [r#"a.rs:4: bq-on:input="preview.schedule" is dropped, because the component's element (form.rs:5) already has bq-on:input"#]
+    );
+}
+
+#[test]
 fn handler_errors() {
     let cases = [
         (r#"bq-on:click|later="a""#, "`later` is not a modifier"),

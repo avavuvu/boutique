@@ -262,7 +262,20 @@ impl<'a> Walker<'a> {
                 self.reference(reference, &tags, &cx.scope, location, frame.caller.function);
             }
             setups.extend(frame.attrs.setups.iter().cloned());
-            ons.extend(frame.attrs.ons.iter().cloned().map(|(on, location)| (on, location, frame.caller.function)));
+            for (on, call_site) in &frame.attrs.ons {
+                if ons.iter().any(|(own, ..)| own.attribute == on.attribute) {
+                    let value = match &on.setup {
+                        Some(setup) => format!("{setup}.{}", on.handler),
+                        None => on.handler.clone(),
+                    };
+                    self.warnings.push(format!(
+                        "{call_site}: {}=\"{value}\" is dropped, because the component's element ({location}) already has {}",
+                        on.attribute, on.attribute
+                    ));
+                    continue;
+                }
+                ons.push((on.clone(), call_site.clone(), frame.caller.function));
+            }
         }
         let has_setups = !setups.is_empty();
         let inner = self.owners(&tags, setups, cx.scope.clone());
