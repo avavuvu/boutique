@@ -431,7 +431,7 @@ fn call_site_handler_goes_to_the_spread_element() {
 }
 
 #[test]
-fn call_site_handler_with_the_same_attribute_is_dropped() {
+fn call_site_handler_with_the_same_attribute_merges() {
     let (types, _, warnings) = ok(&[
         (0, "form.rs", r##"
             setup!(DirtyForm);
@@ -443,15 +443,29 @@ fn call_site_handler_with_the_same_attribute_is_dropped() {
         (0, "a.rs", r##"
             setup!(Preview);
             fn view() -> Markup {
-                html! { DirtyForm bq-setup=(Preview) bq-on:input="preview.schedule" bq-on:input|capture="preview.early" {} }
+                html! { DirtyForm bq-setup=(Preview) bq-on:input="preview.schedule preview.count" {} }
             }
         "##),
     ]);
-    assert_eq!(setup(&types, "Preview"), r#"Setup<"form", {}, { early: { event: "input"; tag: "form" } }>"#);
     assert_eq!(
-        warnings,
-        [r#"a.rs:4: bq-on:input="preview.schedule" is dropped, because the component's element (form.rs:5) already has bq-on:input"#]
+        setup(&types, "Preview"),
+        r#"Setup<"form", {}, { count: { event: "input"; tag: "form" }; schedule: { event: "input"; tag: "form" } }>"#
     );
+    assert_eq!(setup(&types, "DirtyForm"), r#"Setup<"form", {}, { update: { event: "input"; tag: "form" } }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn several_handlers_in_one_attribute() {
+    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+        setup!(Menu);
+        fn view() -> Markup { html! { nav bq-setup=(Menu) { a bq-on:click|prevent="open  track-click" {} } } }
+    "##)]);
+    assert_eq!(
+        setup(&types, "Menu"),
+        r#"Setup<"nav", {}, { open: { event: "click"; tag: "a" }; trackClick: { event: "click"; tag: "a" } }>"#
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
@@ -474,6 +488,8 @@ fn handler_errors() {
         (r#"bq-on:click="DirtyForm.save""#, "the setup name must be kebab-case"),
         (r#"bq-on:click=(name)"#, "bq-on:click needs a fixed string"),
         (r#"bq-on:click="disconnect""#, "`disconnect` is reserved"),
+        (r#"bq-on:click="save Bad""#, r#"bq-on:click="Bad": the handler must be kebab-case"#),
+        (r#"bq-on:click=" ""#, "bq-on:click needs a handler"),
     ];
     for (attribute, expected) in cases {
         let source = format!(

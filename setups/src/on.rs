@@ -64,7 +64,7 @@ fn single_key(modifier: &str) -> bool {
     modifier.len() == 1 && modifier.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
 }
 
-pub fn parse(attribute: &str, value: &str) -> Result<On, String> {
+pub fn parse(attribute: &str, value: &str) -> Result<Vec<On>, String> {
     let rest = attribute.strip_prefix("bq-on:").unwrap_or_default();
     let mut parts = rest.split('|');
     let event = parts.next().unwrap_or_default().to_string();
@@ -120,6 +120,14 @@ pub fn parse(attribute: &str, value: &str) -> Result<On, String> {
         return Err(format!("{attribute}: `self` cannot be used with `window` or `document`"));
     }
 
+    let tokens: Vec<&str> = value.split_whitespace().collect();
+    if tokens.is_empty() {
+        return Err(format!("{attribute} needs a handler, for example {attribute}=\"save\""));
+    }
+    tokens.into_iter().map(|token| handler(attribute, token, &event, &target)).collect()
+}
+
+fn handler(attribute: &str, value: &str, event: &str, target: &Target) -> Result<On, String> {
     let (setup, handler) = match value.split_once('.') {
         Some((setup, handler)) => (Some(setup.to_string()), handler.to_string()),
         None => (None, value.to_string()),
@@ -142,5 +150,5 @@ pub fn parse(attribute: &str, value: &str) -> Result<On, String> {
     }
 
     let key = handler.to_lower_camel_case();
-    Ok(On { attribute: attribute.to_string(), event, target, setup, handler, key })
+    Ok(On { attribute: attribute.to_string(), event: event.to_string(), target: target.clone(), setup, handler, key })
 }

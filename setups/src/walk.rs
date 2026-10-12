@@ -263,17 +263,6 @@ impl<'a> Walker<'a> {
             }
             setups.extend(frame.attrs.setups.iter().cloned());
             for (on, call_site) in &frame.attrs.ons {
-                if ons.iter().any(|(own, ..)| own.attribute == on.attribute) {
-                    let value = match &on.setup {
-                        Some(setup) => format!("{setup}.{}", on.handler),
-                        None => on.handler.clone(),
-                    };
-                    self.warnings.push(format!(
-                        "{call_site}: {}=\"{value}\" is dropped, because the component's element ({location}) already has {}",
-                        on.attribute, on.attribute
-                    ));
-                    continue;
-                }
                 ons.push((on.clone(), call_site.clone(), frame.caller.function));
             }
         }
@@ -378,7 +367,7 @@ impl<'a> Walker<'a> {
                         }
                     };
                     match on::parse(attribute, &value) {
-                        Ok(on) => call.ons.push((on, location.to_string())),
+                        Ok(ons) => call.ons.extend(ons.into_iter().map(|on| (on, location.to_string()))),
                         Err(message) => self.errors.push(format!("{location}: {message}")),
                     }
                 }

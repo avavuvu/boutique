@@ -79,6 +79,18 @@ test("kebab-case handler names call camelCase handlers", async () => {
     assert.deepStrictEqual(calls, ["plain", "named"]);
 });
 
+test("one attribute can call several handlers", async () => {
+    const calls: string[] = [];
+    add("outer", () => ({ schedule: () => calls.push("outer.schedule") }));
+    add("inner", () => ({ update: () => calls.push("inner.update"), count: () => calls.push("inner.count") }));
+    const host = await mount(`<div bq-setup="outer"><form bq-setup="inner" bq-on:input=" update  outer.schedule count "><input></form></div>`);
+
+    host.querySelector("input")!.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event);
+    assert.deepStrictEqual(calls.filter((call) => call.startsWith("inner")), ["inner.update", "inner.count"]);
+    assert.deepStrictEqual([...calls].sort(), ["inner.count", "inner.update", "outer.schedule"]);
+    assert.deepStrictEqual(warnings, []);
+});
+
 test("setups that return nothing still run", async () => {
     let ran = false;
     add("plain", () => {

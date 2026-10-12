@@ -217,7 +217,7 @@ impl Generator {
                 }
                 Attribute::Named { name, attr_type } => {
                     let name = name.to_string();
-                    if name != "class" && name != "bq-setup" {
+                    if name != "class" && !merges(&name) {
                         skip.push(name.clone());
                     }
                     stmts.push(match attr_type {
@@ -311,7 +311,10 @@ impl Generator {
         let (classes, id, named_attrs, spreads) = split_attrs(attrs);
 
         let class_attrs = named_attrs.iter().filter(|(name, _)| name.to_string() == "class").count();
-        if !spreads.is_empty() || class_attrs > 1 || (class_attrs == 1 && !classes.is_empty()) {
+        let merged_names: Vec<String> =
+            named_attrs.iter().map(|(name, _)| name.to_string()).filter(|name| merges(name)).collect();
+        let repeated = merged_names.iter().enumerate().any(|(index, name)| merged_names[..index].contains(name));
+        if !spreads.is_empty() || repeated || class_attrs > 1 || (class_attrs == 1 && !classes.is_empty()) {
             self.attrs_merged(classes, id, named_attrs, spreads, build);
             return;
         }
@@ -391,23 +394,29 @@ impl Generator {
             });
         }
 
-        let setup = Ident::new("__bq_setup", Span::mixed_site());
-        let mut setup_parts = Vec::new();
+        let list = Ident::new("__bq_list", Span::mixed_site());
+        let mut groups: Vec<(String, Vec<TokenStream>)> = Vec::new();
         let mut skip = Vec::new();
         let mut rest = Vec::new();
         for (name, attr_type) in named_attrs {
             let text = name.to_string();
-            if text == "bq-setup"
-                && !spreads.is_empty()
+            if merges(&text)
                 && let AttributeType::Normal { value, .. } = attr_type
             {
-                setup_parts.push(class_part(&setup, |generator, build| generator.markup(value, build)));
-                skip.push(text);
+                let part = class_part(&list, |generator, build| generator.markup(value, build));
+                match groups.iter_mut().find(|(group, _)| *group == text) {
+                    Some((_, parts)) => parts.push(part),
+                    None => {
+                        skip.push(text.clone());
+                        rest.push(Rest::Group(groups.len()));
+                        groups.push((text, vec![part]));
+                    }
+                }
                 continue;
             }
             if text != "class" {
                 skip.push(text);
-                rest.push((name, attr_type));
+                rest.push(Rest::Attr(name, Box::new(attr_type)));
                 continue;
             }
             match attr_type {
@@ -474,22 +483,30 @@ impl Generator {
             inner.push_str("\"");
         }
 
-        if !setup_parts.is_empty() {
-            let spread_setup = Ident::new("__bq_spread_setup", Span::mixed_site());
-            inner.push_tokens(quote! {
-                let mut #setup = alloc::string::String::new();
-                #(#setup_parts)*
-                if let Some(#spread_setup) = #spread.__value("bq-setup") {
-                    ::bq_components::__private::push_class(&mut #setup, #spread_setup);
+        let spread_list = Ident::new("__bq_spread_list", Span::mixed_site());
+        for item in rest {
+            match item {
+                Rest::Attr(name, attr_type) => self.attr(name, *attr_type, &mut inner),
+                Rest::Group(index) => {
+                    let (name, parts) = &groups[index];
+                    let open = format!(" {}=\"", escaped(name));
+                    let spread_part = spread_binding.is_some().then(|| {
+                        quote! {
+                            if let Some(#spread_list) = #spread.__value(#name) {
+                                ::bq_components::__private::push_class(&mut #list, #spread_list);
+                            }
+                        }
+                    });
+                    inner.push_tokens(quote! {{
+                        let mut #list = alloc::string::String::new();
+                        #(#parts)*
+                        #spread_part
+                        #output_ident.push_str(#open);
+                        #output_ident.push_str(&#list);
+                        #output_ident.push_str("\"");
+                    }});
                 }
-                #output_ident.push_str(" bq-setup=\"");
-                #output_ident.push_str(&#setup);
-                #output_ident.push_str("\"");
-            });
-        }
-
-        for (name, attr_type) in rest {
-            self.attr(name, attr_type, &mut inner);
+            }
         }
 
         if spread_binding.is_some() {
@@ -624,6 +641,15 @@ impl Generator {
 }
 
 ////////////////////////////////////////////////////////
+
+enum Rest {
+    Attr(HtmlName, Box<AttributeType>),
+    Group(usize),
+}
+
+fn merges(name: &str) -> bool {
+    name == "bq-setup" || name.starts_with("bq-on:")
+}
 
 fn setup_attrs(attrs: &mut [Attribute]) {
     for attr in attrs {

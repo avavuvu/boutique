@@ -55,6 +55,23 @@ fn through_spread_and_components() {
     };
     assert_eq!(
         result.into_string(),
-        r#"<p bq-on:keydown|escape="close"></p><section bq-on:click="own" bq-on:keydown|enter="go"></section>"#
+        r#"<p bq-on:keydown|escape="close"></p><section bq-on:click="own caller" bq-on:keydown|enter="go"></section>"#
+    );
+}
+
+#[test]
+fn same_attribute_merges_on_one_element() {
+    let result = html! { input bq-on:input="a" type="text" bq-on:input="menu.b"; };
+    assert_eq!(result.into_string(), r#"<input bq-on:input="a menu.b" type="text">"#);
+}
+
+#[test]
+fn spread_merges_after_the_static_value() {
+    let extra = attrs!("bq-on:input" = "preview.schedule", "bq-on:change" = "other");
+    let more = attrs!("bq-on:input" = "third");
+    let result = html! { form bq-on:input="dirty-form.update" method="post" (..extra) (..more) {} };
+    assert_eq!(
+        result.into_string(),
+        r#"<form bq-on:input="dirty-form.update preview.schedule third" method="post" bq-on:change="other"></form>"#
     );
 }

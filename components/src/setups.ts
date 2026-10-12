@@ -54,7 +54,7 @@ type Instance = {
     bound: WeakMap<Element, Set<string>>;
 };
 
-type Binding = { event: string; modifiers: Set<string>; setup?: string; handler: string };
+type Binding = { key: string; event: string; modifiers: Set<string>; setup?: string; handler: string };
 
 const ATTRIBUTE = "bq-setup";
 const REF = "bq-ref";
@@ -100,12 +100,19 @@ function refsOf(root: Element, many: readonly string[]): Record<string, Element 
     return refs;
 }
 
-function parseBinding(attribute: string, value: string): Binding {
-    const [event = "", ...modifiers] = attribute.slice(ON.length).split("|");
-    const dot = value.indexOf(".");
-    return dot < 0
-        ? { event, modifiers: new Set(modifiers), handler: camel(value.trim()) }
-        : { event, modifiers: new Set(modifiers), setup: value.slice(0, dot).trim(), handler: camel(value.slice(dot + 1).trim()) };
+function parseBindings(attribute: string, value: string): Binding[] {
+    const [event = "", ...rest] = attribute.slice(ON.length).split("|");
+    const modifiers = new Set(rest);
+    return value
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((token) => {
+            const key = `${attribute}=${token}`;
+            const dot = token.indexOf(".");
+            return dot < 0
+                ? { key, event, modifiers, handler: camel(token) }
+                : { key, event, modifiers, setup: token.slice(0, dot), handler: camel(token.slice(dot + 1)) };
+        });
 }
 
 function ownerOf(element: Element, setup: string | undefined): [Element, string] | undefined {
@@ -163,14 +170,14 @@ export function defineSetups(registry: Registry): void {
     const running = new WeakMap<Element, Map<string, Instance>>();
     const loads = new Map<string, Promise<AnySetup>>();
 
-    const attach = (instance: Instance, element: Element, attribute: string, binding: Binding): void => {
+    const attach = (instance: Instance, element: Element, binding: Binding): void => {
         let bound = instance.bound.get(element);
-        if (bound?.has(attribute)) return;
+        if (bound?.has(binding.key)) return;
         if (!bound) {
             bound = new Set();
             instance.bound.set(element, bound);
         }
-        bound.add(attribute);
+        bound.add(binding.key);
 
         const handler = binding.handler === "disconnect" ? undefined : instance.handlers?.[binding.handler];
         if (typeof handler !== "function") {
@@ -204,11 +211,12 @@ export function defineSetups(registry: Registry): void {
         for (const element of [root, ...root.querySelectorAll("*")]) {
             for (const { name: attribute, value } of [...element.attributes]) {
                 if (!attribute.startsWith(ON)) continue;
-                const binding = parseBinding(attribute, value);
-                const owner = ownerOf(element, binding.setup);
-                if (!owner) continue;
-                const instance = running.get(owner[0])?.get(owner[1]);
-                if (instance?.ready) attach(instance, element, attribute, binding);
+                for (const binding of parseBindings(attribute, value)) {
+                    const owner = ownerOf(element, binding.setup);
+                    if (!owner) continue;
+                    const instance = running.get(owner[0])?.get(owner[1]);
+                    if (instance?.ready) attach(instance, element, binding);
+                }
             }
         }
     };

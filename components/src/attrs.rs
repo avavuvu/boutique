@@ -2,7 +2,9 @@ use std::fmt::Write;
 
 use maud::PreEscaped;
 
-const SETUP: &str = "bq-setup";
+fn merges(name: &str) -> bool {
+    name == "bq-setup" || name.starts_with("bq-on:")
+}
 
 #[derive(Clone, Debug)]
 pub enum AttrValue {
@@ -62,7 +64,7 @@ impl Attrs {
             return;
         }
         match self.entries.iter_mut().find(|(entry, _)| *entry == name) {
-            Some((_, AttrValue::Text(PreEscaped(existing)))) if name == SETUP => push_class(existing, &escaped),
+            Some((_, AttrValue::Text(PreEscaped(existing)))) if merges(name) => push_class(existing, &escaped),
             Some(_) => {}
             None => self.entries.push((name, AttrValue::Text(PreEscaped(escaped)))),
         }
@@ -95,7 +97,7 @@ impl Attrs {
                 continue;
             }
             match value {
-                AttrValue::Text(PreEscaped(text)) if *name == SETUP => self.__text(name, text.clone()),
+                AttrValue::Text(PreEscaped(text)) if merges(name) => self.__text(name, text.clone()),
                 _ if !self.has(name) => self.entries.push((name, value.clone())),
                 _ => {}
             }
