@@ -247,6 +247,69 @@ test("async and lazy setups bind after they resolve", async () => {
     assert.deepStrictEqual(calls, ["async", "lazy"]);
 });
 
+test("disconnect runs when the element is removed", async () => {
+    const calls: string[] = [];
+    add("stops", () => ({ disconnect: () => calls.push("disconnect") }));
+    const host = await mount(`<div bq-setup="stops"></div>`);
+
+    assert.deepStrictEqual(calls, []);
+    host.remove();
+    await tick();
+    assert.deepStrictEqual(calls, ["disconnect"]);
+});
+
+test("disconnect runs when bq-setup changes, with handlers", async () => {
+    const calls: string[] = [];
+    add("stops-with-handlers", () => ({
+        hit: () => calls.push("hit"),
+        disconnect: () => calls.push("disconnect"),
+    }));
+    const host = await mount(`<button bq-setup="stops-with-handlers" bq-on:click="hit"></button>`);
+    const button = host.querySelector("button")!;
+
+    click(button);
+    button.setAttribute("bq-setup", "");
+    await tick();
+    click(button);
+    assert.deepStrictEqual(calls, ["hit", "disconnect"]);
+});
+
+test("disconnect runs at once when an async setup resolves after it stopped", async () => {
+    const calls: string[] = [];
+    let resolve: (value: unknown) => void = () => {};
+    add("slow", () => new Promise((done) => (resolve = done)));
+    const host = await mount(`<div bq-setup="slow"></div>`);
+
+    host.remove();
+    await tick();
+    resolve({ disconnect: () => calls.push("disconnect") });
+    await tick();
+    assert.deepStrictEqual(calls, ["disconnect"]);
+});
+
+test("disconnect is not a handler and its errors are caught", async () => {
+    const errors: unknown[][] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => void errors.push(args);
+    let stopped = 0;
+    add("bad-disconnect", () => ({
+        disconnect: () => {
+            stopped += 1;
+            throw new Error("stop");
+        },
+    }));
+    const host = await mount(`<button bq-setup="bad-disconnect" bq-on:click="disconnect"></button>`);
+
+    click(host.querySelector("button")!);
+    assert.strictEqual(stopped, 0);
+    assert.ok(String(warnings[0]?.[0]).includes(`has no handler "disconnect"`));
+    host.remove();
+    await tick();
+    console.error = original;
+    assert.strictEqual(stopped, 1);
+    assert.ok(String(errors[0]?.[0]).includes(`setup "bad-disconnect" failed`));
+});
+
 test("a missing handler warns", async () => {
     add("missing", () => ({}));
     await mount(`<button bq-setup="missing" bq-on:click="nothing"></button>`);

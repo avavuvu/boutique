@@ -446,6 +446,7 @@ fn handler_errors() {
         (r#"bq-on:click="save-it""#, "the handler must be a JavaScript name"),
         (r#"bq-on:click="DirtyForm.save""#, "the setup name must be kebab-case"),
         (r#"bq-on:click=(name)"#, "bq-on:click needs a fixed string"),
+        (r#"bq-on:click="disconnect""#, "`disconnect` is reserved"),
     ];
     for (attribute, expected) in cases {
         let source = format!(

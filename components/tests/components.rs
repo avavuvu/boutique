@@ -129,7 +129,7 @@ fn password_keeps_the_toggle_and_extra_attributes() {
         ),
         "{result}"
     );
-    assert!(result.contains(r#"<button type="button" tabindex="-1" bq-ref="toggle">Show</button>"#), "{result}");
+    assert!(result.contains(r#"<button type="button" tabindex="-1" bq-on:click="toggle">Show</button>"#), "{result}");
 }
 
 #[test]

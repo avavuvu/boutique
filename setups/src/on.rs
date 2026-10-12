@@ -120,6 +120,9 @@ pub fn parse(attribute: &str, value: &str) -> Result<On, String> {
     if !valid_handler {
         return Err(format!("{attribute}=\"{value}\": the handler must be a JavaScript name, for example bq-on:click=\"save\""));
     }
+    if handler == "disconnect" {
+        return Err(format!("{attribute}=\"{value}\": `disconnect` is reserved for the code that runs when the setup stops"));
+    }
     if let Some(setup) = &setup {
         let valid_setup = setup.chars().next().is_some_and(|first| first.is_ascii_lowercase())
             && !setup.ends_with('-')

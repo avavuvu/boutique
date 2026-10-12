@@ -28,7 +28,9 @@ export type Handler<U extends Use> = (event: EventOf<U>, element: ElementOf<U["t
 
 export type Handlers<On> = { [Name in keyof On]: On[Name] extends Use ? Handler<On[Name]> : never };
 
-type Returned<On> = [keyof On] extends [never] ? void : Handlers<On>;
+type Lifecycle = { disconnect?: () => unknown };
+
+type Returned<On> = [keyof On] extends [never] ? void | Lifecycle : Handlers<On> & Lifecycle;
 
 export type Setup<Tag extends string, Shape = {}, On = {}> = (
     element: ElementOf<Tag>,
@@ -170,7 +172,7 @@ export function defineSetups(registry: Registry): void {
         }
         bound.add(attribute);
 
-        const handler = instance.handlers?.[binding.handler];
+        const handler = binding.handler === "disconnect" ? undefined : instance.handlers?.[binding.handler];
         if (typeof handler !== "function") {
             console.warn(`[bq] setup "${instance.name}" has no handler "${binding.handler}"`, element);
             return;
@@ -215,13 +217,30 @@ export function defineSetups(registry: Registry): void {
         const { signal } = instance.controller;
         if (signal.aborted) return;
 
+        const failed = (error: unknown): void => console.error(`[bq] setup "${instance.name}" failed`, error);
+
         const ready = (handlers: unknown): void => {
-            if (signal.aborted) return;
+            const object = handlers && typeof handlers === "object" ? (handlers as Record<string, unknown>) : undefined;
+            const disconnect = object?.disconnect;
+            const stop = (): void => {
+                if (typeof disconnect !== "function") return;
+                try {
+                    const result: unknown = disconnect.call(object);
+                    if (result instanceof Promise) result.catch(failed);
+                } catch (error) {
+                    failed(error);
+                }
+            };
+
+            if (signal.aborted) {
+                stop();
+                return;
+            }
+            signal.addEventListener("abort", stop, { once: true });
             instance.ready = true;
-            if (handlers && typeof handlers === "object") instance.handlers = handlers as Record<string, unknown>;
+            instance.handlers = object;
             bindWithin(element);
         };
-        const failed = (error: unknown): void => console.error(`[bq] setup "${instance.name}" failed`, error);
 
         try {
             const result = setup(element, { ...refsOf(element, entry.many), signal });

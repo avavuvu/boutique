@@ -73,7 +73,7 @@ pub fn input(
             @if is_password {
                 div.shell.password bq-setup=(PasswordToggle) {
                     (control)
-                    button type="button" tabindex="-1" bq-ref="toggle" { "Show" }
+                    button type="button" tabindex="-1" bq-on:click="toggle" { "Show" }
                 }
             } @else {
                 div.shell.prefixed[prefix.is_some() || suffix.is_some()] {
