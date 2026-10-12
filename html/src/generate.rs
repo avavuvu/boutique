@@ -217,7 +217,7 @@ impl Generator {
                 }
                 Attribute::Named { name, attr_type } => {
                     let name = name.to_string();
-                    if name != "class" {
+                    if name != "class" && name != "bq-setup" {
                         skip.push(name.clone());
                     }
                     stmts.push(match attr_type {
@@ -391,10 +391,20 @@ impl Generator {
             });
         }
 
+        let setup = Ident::new("__bq_setup", Span::mixed_site());
+        let mut setup_parts = Vec::new();
         let mut skip = Vec::new();
         let mut rest = Vec::new();
         for (name, attr_type) in named_attrs {
             let text = name.to_string();
+            if text == "bq-setup"
+                && !spreads.is_empty()
+                && let AttributeType::Normal { value, .. } = attr_type
+            {
+                setup_parts.push(class_part(&setup, |generator, build| generator.markup(value, build)));
+                skip.push(text);
+                continue;
+            }
             if text != "class" {
                 skip.push(text);
                 rest.push((name, attr_type));
@@ -462,6 +472,20 @@ impl Generator {
             inner.push_str("=\"");
             self.name_or_markup(id, &mut inner);
             inner.push_str("\"");
+        }
+
+        if !setup_parts.is_empty() {
+            let spread_setup = Ident::new("__bq_spread_setup", Span::mixed_site());
+            inner.push_tokens(quote! {
+                let mut #setup = alloc::string::String::new();
+                #(#setup_parts)*
+                if let Some(#spread_setup) = #spread.__value("bq-setup") {
+                    ::bq_components::__private::push_class(&mut #setup, #spread_setup);
+                }
+                #output_ident.push_str(" bq-setup=\"");
+                #output_ident.push_str(&#setup);
+                #output_ident.push_str("\"");
+            });
         }
 
         for (name, attr_type) in rest {

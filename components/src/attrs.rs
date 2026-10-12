@@ -2,6 +2,8 @@ use std::fmt::Write;
 
 use maud::PreEscaped;
 
+const SETUP: &str = "bq-setup";
+
 #[derive(Clone, Debug)]
 pub enum AttrValue {
     Flag,
@@ -57,9 +59,21 @@ impl Attrs {
     pub fn __text(&mut self, name: &'static str, escaped: String) {
         if name == "class" {
             self.__class(&escaped);
-        } else if !self.has(name) {
-            self.entries.push((name, AttrValue::Text(PreEscaped(escaped))));
+            return;
         }
+        match self.entries.iter_mut().find(|(entry, _)| *entry == name) {
+            Some((_, AttrValue::Text(PreEscaped(existing)))) if name == SETUP => push_class(existing, &escaped),
+            Some(_) => {}
+            None => self.entries.push((name, AttrValue::Text(PreEscaped(escaped)))),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __value(&self, name: &str) -> Option<&str> {
+        self.entries.iter().find_map(|(entry, value)| match value {
+            AttrValue::Text(PreEscaped(text)) if *entry == name => Some(text.as_str()),
+            _ => None,
+        })
     }
 
     #[doc(hidden)]
@@ -77,8 +91,13 @@ impl Attrs {
     pub fn __extend_except(&mut self, other: &Attrs, skip: &[&str]) {
         self.__class(&other.class);
         for (name, value) in &other.entries {
-            if !skip.contains(name) && !self.has(name) {
-                self.entries.push((name, value.clone()));
+            if skip.contains(name) {
+                continue;
+            }
+            match value {
+                AttrValue::Text(PreEscaped(text)) if *name == SETUP => self.__text(name, text.clone()),
+                _ if !self.has(name) => self.entries.push((name, value.clone())),
+                _ => {}
             }
         }
     }
