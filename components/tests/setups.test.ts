@@ -8,7 +8,7 @@ for (const key of ["document", "navigator", "MutationObserver", "Event", "Keyboa
 }
 Object.defineProperty(globalThis, "window", { value: window, configurable: true, writable: true });
 
-const { defineSetups } = await import("../src/setups.ts");
+const { context, defineSetups, inject, provide } = await import("../src/setups.ts");
 
 type Registry = Parameters<typeof defineSetups>[0];
 type Calls = unknown[][];
@@ -89,6 +89,68 @@ test("one attribute can call several handlers", async () => {
     assert.deepStrictEqual(calls.filter((call) => call.startsWith("inner")), ["inner.update", "inner.count"]);
     assert.deepStrictEqual([...calls].sort(), ["inner.count", "inner.update", "outer.schedule"]);
     assert.deepStrictEqual(warnings, []);
+});
+
+test("inject waits for a provider that loads later", async () => {
+    const theme = context<{ color: string }>("theme");
+    const seen: string[] = [];
+    add("late-provider", (element) => provide(element, theme, { color: "red" }), true);
+    add("early-child", async (element) => {
+        seen.push((await inject(element, theme)).color);
+    });
+    await mount(`<div bq-setup="late-provider"><p><span bq-setup="early-child"></span></p></div>`);
+    await tick();
+    assert.deepStrictEqual(seen, ["red"]);
+});
+
+test("inject takes the nearest provider", async () => {
+    const level = context<string>("level");
+    const seen: string[] = [];
+    add("outer-level", (element) => provide(element, level, "outer"));
+    add("inner-level", (element) => provide(element, level, "inner"), true);
+    add("reader", async (element) => {
+        seen.push(await inject(element, level));
+    });
+    await mount(`<div bq-setup="outer-level"><section bq-setup="inner-level"><b bq-setup="reader"></b></section><i bq-setup="reader"></i></div>`);
+    await tick();
+    assert.deepStrictEqual(seen.sort(), ["inner", "outer"]);
+});
+
+test("inject skips ancestors that do not provide the key", async () => {
+    const level = context<string>("skip");
+    const seen: string[] = [];
+    add("skip-provider", (element) => provide(element, level, "found"));
+    add("skip-middle", () => {}, true);
+    add("skip-reader", async (element) => {
+        seen.push(await inject(element, level));
+    });
+    await mount(`<div bq-setup="skip-provider"><div bq-setup="skip-middle"><b bq-setup="skip-reader"></b></div></div>`);
+    await tick();
+    assert.deepStrictEqual(seen, ["found"]);
+});
+
+test("inject fails when no setup above provides the key", async () => {
+    const missing = context<string>("missing");
+    const errors: string[] = [];
+    add("no-provider", () => {});
+    add("orphan", async (element) => {
+        await inject(element, missing).catch((error: Error) => errors.push(error.message));
+    });
+    add("broken-provider", () => {
+        throw new Error("broken");
+    });
+    const error = console.error;
+    console.error = () => {};
+    try {
+        await mount(`<div bq-setup="no-provider"><b bq-setup="orphan"></b></div><div bq-setup="broken-provider"><b bq-setup="orphan"></b></div>`);
+        await tick();
+    } finally {
+        console.error = error;
+    }
+    assert.deepStrictEqual(errors, [
+        `[bq] no setup above this element provides "missing"`,
+        `[bq] no setup above this element provides "missing"`,
+    ]);
 });
 
 test("setups that return nothing still run", async () => {

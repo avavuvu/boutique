@@ -50,6 +50,7 @@ type Instance = {
     name: string;
     controller: AbortController;
     ready: boolean;
+    settled: boolean;
     handlers?: Record<string, unknown>;
     bound: WeakMap<Element, Set<string>>;
 };
@@ -74,7 +75,63 @@ const KEYS: Record<string, readonly string[]> = {
 const BUTTONS: Record<string, number> = { left: 0, middle: 1, right: 2 };
 const SYSTEM = ["ctrl", "alt", "shift", "meta"] as const;
 
+declare const VALUE: unique symbol;
+
+export type ContextKey<T> = { readonly name: string; readonly [VALUE]?: T };
+
+type Waiting = { element: Element; key: ContextKey<unknown>; resolve: (value: unknown) => void; reject: (error: Error) => void };
+
 let defined = false;
+const running = new WeakMap<Element, Map<string, Instance>>();
+const provided = new WeakMap<Element, Map<ContextKey<unknown>, unknown>>();
+const waiting = new Set<Waiting>();
+
+export function context<T>(name: string): ContextKey<T> {
+    return Object.freeze({ name });
+}
+
+export function provide<T>(element: Element, key: ContextKey<T>, value: T): void {
+    let values = provided.get(element);
+    if (!values) {
+        values = new Map();
+        provided.set(element, values);
+    }
+    values.set(key, value);
+    check();
+}
+
+export function inject<T>(element: Element, key: ContextKey<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const entry: Waiting = { element, key, resolve: resolve as (value: unknown) => void, reject };
+        if (!attempt(entry)) waiting.add(entry);
+    });
+}
+
+function attempt(entry: Waiting): boolean {
+    if (!entry.element.isConnected) return true;
+    for (let owner = entry.element.parentElement?.closest(`[${ATTRIBUTE}]`); owner; owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`)) {
+        const values = provided.get(owner);
+        if (values?.has(entry.key)) {
+            entry.resolve(values.get(entry.key));
+            return true;
+        }
+        const instances = running.get(owner);
+        if (namesOf(owner).some((name) => !instances?.get(name)?.settled)) return false;
+    }
+    entry.reject(new Error(`[bq] no setup above this element provides "${entry.key.name}"`));
+    return true;
+}
+
+function check(): void {
+    for (const entry of waiting) {
+        if (attempt(entry)) waiting.delete(entry);
+    }
+}
+
+function settle(instance: Instance): void {
+    instance.settled = true;
+    check();
+}
 
 function camel(name: string): string {
     return name.replace(/-([a-z0-9])/g, (_, next: string) => next.toUpperCase());
@@ -167,7 +224,6 @@ export function defineSetups(registry: Registry): void {
     }
     defined = true;
 
-    const running = new WeakMap<Element, Map<string, Instance>>();
     const loads = new Map<string, Promise<AnySetup>>();
 
     const attach = (instance: Instance, element: Element, binding: Binding): void => {
@@ -225,7 +281,10 @@ export function defineSetups(registry: Registry): void {
         const { signal } = instance.controller;
         if (signal.aborted) return;
 
-        const failed = (error: unknown): void => console.error(`[bq] setup "${instance.name}" failed`, error);
+        const failed = (error: unknown): void => {
+            console.error(`[bq] setup "${instance.name}" failed`, error);
+            settle(instance);
+        };
 
         const ready = (handlers: unknown): void => {
             const object = handlers && typeof handlers === "object" ? (handlers as Record<string, unknown>) : undefined;
@@ -248,6 +307,7 @@ export function defineSetups(registry: Registry): void {
             instance.ready = true;
             instance.handlers = object;
             bindWithin(element);
+            settle(instance);
         };
 
         try {
@@ -287,12 +347,13 @@ export function defineSetups(registry: Registry): void {
                 instances = new Map();
                 running.set(element, instances);
             }
-            const instance: Instance = { name, controller: new AbortController(), ready: false, bound: new WeakMap() };
+            const instance: Instance = { name, controller: new AbortController(), ready: false, settled: false, bound: new WeakMap() };
             instances.set(name, instance);
 
             const entry = registry[name];
             if (!entry) {
                 console.warn(`[bq] there is no setup named "${name}"`, element);
+                settle(instance);
                 continue;
             }
 
@@ -305,7 +366,10 @@ export function defineSetups(registry: Registry): void {
             } else {
                 load(name, entry.load).then(
                     (setup) => run(element, entry, setup, instance),
-                    (error: unknown) => console.error(`[bq] could not load setup "${name}"`, error),
+                    (error: unknown) => {
+                        console.error(`[bq] could not load setup "${name}"`, error);
+                        settle(instance);
+                    },
                 );
             }
         }
@@ -323,7 +387,9 @@ export function defineSetups(registry: Registry): void {
             if (element.isConnected) continue;
             for (const instance of running.get(element)?.values() ?? []) instance.controller.abort();
             running.delete(element);
+            provided.delete(element);
         }
+        check();
     };
 
     const observer = new MutationObserver((records) => {
