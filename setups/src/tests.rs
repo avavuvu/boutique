@@ -293,6 +293,189 @@ fn errors_are_reported_once() {
 }
 
 #[test]
+fn handlers_on_the_setup_element_and_inside_it() {
+    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+        setup!(Dropdown);
+        fn view() -> Markup {
+            html! {
+                details bq-setup=(Dropdown) bq-on:keydown|escape="close" bq-on:pointerdown|document="outside" {
+                    summary bq-on:click|prevent="toggle" {}
+                }
+            }
+        }
+    "##)]);
+    assert_eq!(
+        setup(&types, "Dropdown"),
+        r#"Setup<"details", {}, { close: { event: "keydown"; tag: "details" }; outside: { event: "pointerdown"; tag: "details"; target: "document" }; toggle: { event: "click"; tag: "summary" } }>"#
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn handlers_with_refs_and_several_uses() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(Picker);
+        fn view() -> Markup {
+            html! {
+                div bq-setup=(Picker) {
+                    input bq-ref="custom" bq-on:input="pick";
+                    @for color in colors { button bq-on:click="pick" {} }
+                    button bq-on:resize|window="pick" {}
+                }
+            }
+        }
+    "##)]);
+    assert_eq!(
+        setup(&types, "Picker"),
+        r#"Setup<"div", { custom: "input" }, { pick: { event: "click"; tag: "button" } | { event: "input"; tag: "input" } | { event: "resize"; tag: "button"; target: "window" } }>"#
+    );
+}
+
+#[test]
+fn setups_without_handlers_are_unchanged() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(Plain);
+        fn view() -> Markup { html! { div bq-setup=(Plain) { i bq-ref="icon" {} } } }
+    "##)]);
+    assert_eq!(setup(&types, "Plain"), r#"Setup<"div", { icon: "i" }>"#);
+}
+
+#[test]
+fn named_handler_reaches_an_outer_setup() {
+    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+        setup!(DirtyForm);
+        setup!(PasswordToggle);
+        fn view() -> Markup {
+            html! {
+                form bq-setup=(DirtyForm) {
+                    div bq-setup=(PasswordToggle) {
+                        input bq-on:input="dirty-form.update" bq-on:focus="reveal";
+                    }
+                }
+            }
+        }
+    "##)]);
+    assert_eq!(setup(&types, "DirtyForm"), r#"Setup<"form", {}, { update: { event: "input"; tag: "input" } }>"#);
+    assert_eq!(setup(&types, "PasswordToggle"), r#"Setup<"div", {}, { reveal: { event: "focus"; tag: "input" } }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn two_setups_need_a_setup_name() {
+    let errors = run(&[(0, "a.rs", r##"
+        setup!(DirtyForm);
+        setup!(ThemePreview);
+        fn view() -> Markup { html! { form bq-setup={ (DirtyForm) " " (ThemePreview) } bq-on:input="update" {} } }
+    "##)])
+    .unwrap_err();
+    assert_eq!(
+        errors,
+        [r#"a.rs:4: bq-on:input="update" is inside more than one setup (dirty-form, theme-preview); write the setup name, for example bq-on:input="dirty-form.update""#]
+    );
+
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(DirtyForm);
+        setup!(ThemePreview);
+        fn view() -> Markup { html! { form bq-setup={ (DirtyForm) " " (ThemePreview) } bq-on:input="theme-preview.refresh" {} } }
+    "##)]);
+    assert_eq!(setup(&types, "ThemePreview"), r#"Setup<"form", {}, { refresh: { event: "input"; tag: "form" } }>"#);
+    assert_eq!(setup(&types, "DirtyForm"), r#"Setup<"form">"#);
+}
+
+#[test]
+fn handlers_outside_a_setup_warn() {
+    let (_, _, warnings) = ok(&[(0, "a.rs", r##"
+        setup!(DirtyForm);
+        fn view() -> Markup { html! { div bq-setup=(DirtyForm) {} button bq-on:click="save" {} button bq-on:click="dirty-form.save" {} } }
+    "##)]);
+    assert_eq!(
+        warnings,
+        [
+            r#"a.rs:3: bq-on:click="save" is not inside an element with bq-setup"#,
+            r#"a.rs:3: bq-on:click="dirty-form.save" is not inside an element with bq-setup=(DirtyForm)"#,
+        ]
+    );
+}
+
+#[test]
+fn handler_in_a_followed_function_does_not_warn() {
+    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+        setup!(Menu);
+        fn view() -> Markup { html! { nav bq-setup=(Menu) { (item()) } } }
+        fn item() -> Markup { html! { a bq-on:click|prevent="open" {} } }
+    "##)]);
+    assert_eq!(setup(&types, "Menu"), r#"Setup<"nav", {}, { open: { event: "click"; tag: "a" } }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn call_site_handler_goes_to_the_spread_element() {
+    let (types, _, warnings) = ok(&[
+        (0, "card.rs", CARD),
+        (0, "a.rs", r##"
+            setup!(Collapse);
+            fn view() -> Markup {
+                html! {
+                    div bq-setup=(Collapse) { Card bq-on:click="toggle" {} }
+                    Card bq-setup=(Collapse) bq-on:keydown|enter="toggle" {}
+                    external::Widget bq-setup=(Collapse) bq-on:focus="toggle" {}
+                }
+            }
+        "##),
+    ]);
+    assert_eq!(
+        setup(&types, "Collapse"),
+        r#"Setup<string, {}, { toggle: { event: "click"; tag: "section" } | { event: "focus"; tag: string } | { event: "keydown"; tag: "section" } }>"#
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn handler_errors() {
+    let cases = [
+        (r#"bq-on:click|later="a""#, "`later` is not a modifier"),
+        (r#"bq-on:click|enter="a""#, "`enter` cannot be used with the `click` event"),
+        (r#"bq-on:input|s="a""#, "`s` cannot be used with the `input` event"),
+        (r#"bq-on:focus|ctrl="a""#, "`ctrl` cannot be used with the `focus` event"),
+        (r#"bq-on:keydown|middle="a""#, "`middle` cannot be used with the `keydown` event"),
+        (r#"bq-on:touchstart|passive|prevent="a""#, "`passive` and `prevent` cannot be used together"),
+        (r#"bq-on:click|window|document="a""#, "use only one of `window` and `document`"),
+        (r#"bq-on:click|self|document="a""#, "`self` cannot be used with `window` or `document`"),
+        (r#"bq-on:click|once|once="a""#, "the modifier `once` is given two times"),
+        (r#"bq-on:htmx:afterSwap="a""#, "event names must be lowercase"),
+        (r#"bq-on:click="save-it""#, "the handler must be a JavaScript name"),
+        (r#"bq-on:click="DirtyForm.save""#, "the setup name must be kebab-case"),
+        (r#"bq-on:click=(name)"#, "bq-on:click needs a fixed string"),
+    ];
+    for (attribute, expected) in cases {
+        let source = format!(
+            "setup!(Menu);\nfn view() -> Markup {{ html! {{ div bq-setup=(Menu) {{ button {attribute} {{}} }} }} }}"
+        );
+        let errors = run(&[(0, "a.rs", &source)]).unwrap_err();
+        assert_eq!(errors.len(), 1, "{attribute}: {errors:?}");
+        assert!(errors[0].contains(expected), "{attribute}: {errors:?}");
+    }
+}
+
+#[test]
+fn allowed_modifier_combinations() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(Keys);
+        fn view() -> Markup {
+            html! {
+                div bq-setup=(Keys) {
+                    input bq-on:keydown|mod|exact|s|prevent|window="save" bq-on:keyup|left|right="move";
+                    a bq-on:click|right|ctrl|stop="menu" bq-on:mousedown|middle="wheel" bq-on:wheel|shift|passive="scroll" {}
+                    p bq-on:htmx:before:request|document|once="flush" bq-on:click|self|capture="self" {}
+                }
+            }
+        }
+    "##)]);
+    assert!(types.contains(r#"flush: { event: "htmx:before:request"; tag: "p"; target: "document" }"#), "{types}");
+    assert!(types.contains(r#"save: { event: "keydown"; tag: "input"; target: "window" }"#), "{types}");
+}
+
+#[test]
 fn reserved_reference_name() {
     let errors = run(&[(0, "a.rs", r##"
         setup!(Menu);

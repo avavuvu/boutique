@@ -12,7 +12,7 @@ use syn::{
     spanned::Spanned,
     token::{
         At, Brace, Bracket, Colon, Comma, Dot, DotDot, Else, Eq, EqEq, FatArrow, For, If, In, Let,
-        Match, Minus, Paren, Pound, Question, Semi, Slash, While,
+        Match, Minus, Or, OrOr, Paren, Pound, Question, Semi, Slash, While,
     },
     Error, Expr, Ident, Lit, LitBool, LitInt, LitStr, Local, Pat, Path, Stmt,
 };
@@ -769,18 +769,28 @@ impl DiagnosticParse for HtmlName {
                 loop {
                     punctuated.push_value(input.diagnostic_parse(diagnostics)?);
 
-                    if !(input.peek(Minus) || input.peek(Colon)) {
+                    if input.peek(Minus) || input.peek(Colon) {
+                        let punct = input.diagnostic_parse(diagnostics)?;
+                        punctuated.push_punct(punct);
+                    } else if input.peek(Or) && is_event_name(&punctuated) {
+                        if input.peek(OrOr) {
+                            return Err(input.error("write one `|` between modifiers, for example `bq-on:click|prevent`"));
+                        }
+                        punctuated.push_punct(HtmlNamePunct::Pipe(input.parse()?));
+                    } else {
                         break;
                     }
-
-                    let punct = input.diagnostic_parse(diagnostics)?;
-                    punctuated.push_punct(punct);
                 }
 
                 punctuated
             },
         })
     }
+}
+
+fn is_event_name(name: &Punctuated<HtmlNameFragment, HtmlNamePunct>) -> bool {
+    let text = HtmlName { name: name.clone() }.to_string();
+    text.strip_prefix("bq-on:").is_some_and(|event| !event.is_empty())
 }
 
 impl Parse for HtmlName {
@@ -942,6 +952,7 @@ impl Display for HtmlLit {
 pub enum HtmlNamePunct {
     Colon(Colon),
     Hyphen(Minus),
+    Pipe(Or),
 }
 
 impl DiagnosticParse for HtmlNamePunct {
@@ -963,6 +974,7 @@ impl ToTokens for HtmlNamePunct {
         match self {
             Self::Colon(token) => token.to_tokens(tokens),
             Self::Hyphen(token) => token.to_tokens(tokens),
+            Self::Pipe(token) => token.to_tokens(tokens),
         }
     }
 }
@@ -972,6 +984,7 @@ impl Display for HtmlNamePunct {
         match self {
             Self::Colon(_) => f.write_str(":"),
             Self::Hyphen(_) => f.write_str("-"),
+            Self::Pipe(_) => f.write_str("|"),
         }
     }
 }

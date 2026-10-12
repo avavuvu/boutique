@@ -1,0 +1,60 @@
+use bq_components::{Attrs, attrs, component, html, maud::Markup};
+
+#[component]
+fn panel(#[builder(default)] attrs: Attrs, #[builder(default = html! {})] children: Markup) -> Markup {
+    html! { section bq-on:click="own" (..attrs) { (children) } }
+}
+
+#[test]
+fn plain_event_attribute() {
+    let result = html! { button bq-on:click="save" {} };
+    assert_eq!(result.into_string(), r#"<button bq-on:click="save"></button>"#);
+}
+
+#[test]
+fn modifiers_and_targets() {
+    let result = html! {
+        input bq-on:keydown|enter|prevent="next" bq-on:pointerdown|document="outside";
+    };
+    assert_eq!(
+        result.into_string(),
+        r#"<input bq-on:keydown|enter|prevent="next" bq-on:pointerdown|document="outside">"#
+    );
+}
+
+#[test]
+fn keyword_modifiers() {
+    let result = html! { div bq-on:click|self|once="a" bq-on:keydown|mod|s="b" {} };
+    assert_eq!(result.into_string(), r#"<div bq-on:click|self|once="a" bq-on:keydown|mod|s="b"></div>"#);
+}
+
+#[test]
+fn event_names_with_colons() {
+    let result = html! { div bq-on:htmx:before:request|document="flush" {} };
+    assert_eq!(result.into_string(), r#"<div bq-on:htmx:before:request|document="flush"></div>"#);
+}
+
+#[test]
+fn prefixed_handler_value() {
+    let result = html! { form bq-on:input="dirty-form.update" {} };
+    assert_eq!(result.into_string(), r#"<form bq-on:input="dirty-form.update"></form>"#);
+}
+
+#[test]
+fn same_event_with_different_modifiers() {
+    let result = html! { div bq-on:keydown|enter="a" bq-on:keydown|escape="b" {} };
+    assert_eq!(result.into_string(), r#"<div bq-on:keydown|enter="a" bq-on:keydown|escape="b"></div>"#);
+}
+
+#[test]
+fn through_spread_and_components() {
+    let extra = attrs!("bq-on:keydown|escape" = "close");
+    let result = html! {
+        p (..extra) {}
+        Panel bq-on:click="caller" bq-on:keydown|enter="go" {}
+    };
+    assert_eq!(
+        result.into_string(),
+        r#"<p bq-on:keydown|escape="close"></p><section bq-on:click="own" bq-on:keydown|enter="go"></section>"#
+    );
+}

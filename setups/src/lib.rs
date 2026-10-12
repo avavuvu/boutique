@@ -1,4 +1,5 @@
 mod index;
+mod on;
 mod walk;
 
 #[cfg(test)]
@@ -15,6 +16,7 @@ use proc_macro2::{TokenStream, TokenTree};
 use syn::visit::Visit;
 
 use index::Index;
+use on::Target;
 use walk::{Tags, Usage, Walker};
 
 const RESERVED: [&str; 2] = ["signal", "props"];
@@ -43,6 +45,7 @@ struct Merged {
     tags: BTreeSet<String>,
     any: bool,
     refs: BTreeMap<String, MergedRef>,
+    handlers: BTreeMap<String, BTreeSet<(String, Target, Option<String>)>>,
     usages: usize,
 }
 
@@ -190,7 +193,7 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
         let setup = merged.get(name).unwrap_or(&empty);
         let tags = tag_union(&setup.tags, setup.any);
 
-        if setup.refs.is_empty() {
+        if setup.refs.is_empty() && setup.handlers.is_empty() {
             out.push_str(&format!("export type {name} = Setup<{tags}>;\n"));
             continue;
         }
@@ -209,7 +212,28 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
                 }
             })
             .collect();
-        out.push_str(&format!("export type {name} = Setup<{tags}, {{ {} }}>;\n", refs.join("; ")));
+        let refs = if refs.is_empty() { "{}".to_string() } else { format!("{{ {} }}", refs.join("; ")) };
+
+        if setup.handlers.is_empty() {
+            out.push_str(&format!("export type {name} = Setup<{tags}, {refs}>;\n"));
+            continue;
+        }
+
+        let handlers: Vec<String> = setup
+            .handlers
+            .iter()
+            .map(|(handler, uses)| {
+                let uses: Vec<String> = uses
+                    .iter()
+                    .map(|(event, target, tag)| {
+                        let tag = tag.as_ref().map(|tag| format!("\"{tag}\"")).unwrap_or_else(|| "string".into());
+                        format!("{{ event: \"{event}\"; tag: {tag}{} }}", target.suffix())
+                    })
+                    .collect();
+                format!("{handler}: {}", uses.join(" | "))
+            })
+            .collect();
+        out.push_str(&format!("export type {name} = Setup<{tags}, {refs}, {{ {} }}>;\n", handlers.join("; ")));
     }
 
     out
@@ -316,6 +340,20 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors:
         let setup = merged.entry(usage.name.clone()).or_default();
         setup.usages += 1;
         add_tags(&usage.tags, &mut setup.tags, &mut setup.any);
+
+        for handler in &usage.handlers {
+            let uses = setup.handlers.entry(handler.name.clone()).or_default();
+            match &handler.tags {
+                Tags::Known(tags) => {
+                    for tag in tags {
+                        uses.insert((handler.event.clone(), handler.target.clone(), Some(tag.clone())));
+                    }
+                }
+                Tags::Unknown => {
+                    uses.insert((handler.event.clone(), handler.target.clone(), None));
+                }
+            }
+        }
 
         let mut seen = BTreeSet::new();
         for reference in &usage.refs {

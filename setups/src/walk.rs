@@ -10,11 +10,14 @@ use bq_html::{
     },
     proc_macro2_diagnostics::Diagnostic,
 };
-use heck::ToLowerCamelCase;
+use heck::{ToKebabCase, ToLowerCamelCase, ToUpperCamelCase};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::{Expr, Lit, Stmt, parse::Parser, spanned::Spanned, visit::Visit};
 
-use crate::index::Index;
+use crate::{
+    index::Index,
+    on::{self, On, Target},
+};
 
 #[derive(Clone, Debug)]
 pub enum Tags {
@@ -32,7 +35,15 @@ pub struct Usage {
     pub name: String,
     pub tags: Tags,
     pub refs: Vec<RefUse>,
+    pub handlers: Vec<HandlerUse>,
     pub location: String,
+}
+
+pub struct HandlerUse {
+    pub name: String,
+    pub event: String,
+    pub target: Target,
+    pub tags: Tags,
 }
 
 pub struct RefUse {
@@ -46,6 +57,7 @@ pub struct RefUse {
 #[derive(Clone, Default)]
 struct Scope {
     owners: Vec<usize>,
+    all: Vec<usize>,
     optional: bool,
     many: bool,
 }
@@ -62,8 +74,8 @@ struct Cx<'c> {
 struct CallAttrs {
     setups: Vec<(String, String)>,
     reference: Option<(String, String)>,
+    ons: Vec<(On, String)>,
 }
-
 
 struct Frame<'c> {
     attrs: CallAttrs,
@@ -242,14 +254,22 @@ impl<'a> Walker<'a> {
             self.reference(reference, &tags, &cx.scope, location, cx.function);
         }
         let mut setups = own.setups;
+        let mut ons: Vec<(On, String, Option<usize>)> =
+            own.ons.into_iter().map(|(on, location)| (on, location, cx.function)).collect();
         if let Some(frame) = forwarded {
             frame.attrs_used.set(true);
             if let Some((reference, location)) = frame.attrs.reference.clone() {
                 self.reference(reference, &tags, &cx.scope, location, frame.caller.function);
             }
             setups.extend(frame.attrs.setups.iter().cloned());
+            ons.extend(frame.attrs.ons.iter().cloned().map(|(on, location)| (on, location, frame.caller.function)));
         }
+        let has_setups = !setups.is_empty();
         let inner = self.owners(&tags, setups, cx.scope.clone());
+        let element_owners = if has_setups { inner.owners.clone() } else { Vec::new() };
+        for (on, location, function) in ons {
+            self.handler(on, &tags, &element_owners, &cx.scope, location, function);
+        }
 
         if let ElementBody::Block(block) = &element.body {
             self.markups(&block.markups, &Cx { scope: inner, ..cx.clone() });
@@ -266,6 +286,7 @@ impl<'a> Walker<'a> {
                 attrs.reference = frame.attrs.reference.clone();
             }
             attrs.setups.extend(frame.attrs.setups.iter().cloned());
+            attrs.ons.extend(frame.attrs.ons.iter().cloned());
         }
         let children = match &element.body {
             ElementBody::Block(block) => Some(&block.markups),
@@ -333,6 +354,21 @@ impl<'a> Walker<'a> {
                         call.reference = Some((reference, location.to_string()));
                     }
                 }
+                attribute if attribute.starts_with("bq-on:") => {
+                    let value = match attr_type {
+                        AttributeType::Normal { value: Markup::Lit(lit), .. } => lit.lit.value(),
+                        _ => {
+                            self.errors.push(format!(
+                                "{location}: {attribute} needs a fixed string, for example {attribute}=\"save\""
+                            ));
+                            continue;
+                        }
+                    };
+                    match on::parse(attribute, &value) {
+                        Ok(on) => call.ons.push((on, location.to_string())),
+                        Err(message) => self.errors.push(format!("{location}: {message}")),
+                    }
+                }
                 _ => {}
             }
         }
@@ -343,9 +379,14 @@ impl<'a> Walker<'a> {
         if let Some((reference, location)) = attrs.reference {
             self.reference(reference, tags, &cx.scope, location, cx.function);
         }
-        self.owners(tags, attrs.setups, cx.scope.clone())
+        let has_setups = !attrs.setups.is_empty();
+        let inner = self.owners(tags, attrs.setups, cx.scope.clone());
+        let element_owners = if has_setups { inner.owners.clone() } else { Vec::new() };
+        for (on, location) in attrs.ons {
+            self.handler(on, tags, &element_owners, &cx.scope, location, cx.function);
+        }
+        inner
     }
-
 
     fn owners(&mut self, tags: &Tags, setups: Vec<(String, String)>, outer: Scope) -> Scope {
         if setups.is_empty() {
@@ -353,10 +394,58 @@ impl<'a> Walker<'a> {
         }
         let mut owners = Vec::new();
         for (name, location) in setups {
-            self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), location });
+            self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), handlers: Vec::new(), location });
             owners.push(self.usages.len() - 1);
         }
-        Scope { owners, optional: false, many: false }
+        let all = owners.iter().copied().chain(outer.all).collect();
+        Scope { owners, all, optional: false, many: false }
+    }
+
+    fn handler(&mut self, on: On, tags: &Tags, element_owners: &[usize], scope: &Scope, location: String, function: Option<usize>) {
+        let value = match &on.setup {
+            Some(setup) => format!("{setup}.{}", on.handler),
+            None => on.handler.clone(),
+        };
+        let owner = match &on.setup {
+            Some(setup) => {
+                let found = element_owners
+                    .iter()
+                    .chain(&scope.all)
+                    .copied()
+                    .find(|&owner| self.usages[owner].name.to_kebab_case() == *setup);
+                if found.is_none() {
+                    let message = format!("{location}: {}=\"{value}\" is not inside an element with bq-setup=({})", on.attribute, setup.to_upper_camel_case());
+                    self.orphans.push((function, message));
+                }
+                found
+            }
+            None => {
+                let nearest = if element_owners.is_empty() { &scope.owners } else { element_owners };
+                let mut names: Vec<String> = nearest.iter().map(|&owner| self.usages[owner].name.to_kebab_case()).collect();
+                names.dedup();
+                match (nearest, names.as_slice()) {
+                    ([], _) => {
+                        let message = format!("{location}: {}=\"{value}\" is not inside an element with bq-setup", on.attribute);
+                        self.orphans.push((function, message));
+                        None
+                    }
+                    (_, [_]) => nearest.first().copied(),
+                    _ => {
+                        self.errors.push(format!(
+                            "{location}: {}=\"{value}\" is inside more than one setup ({}); write the setup name, for example {}=\"{}.{value}\"",
+                            on.attribute,
+                            names.join(", "),
+                            on.attribute,
+                            names[0]
+                        ));
+                        None
+                    }
+                }
+            }
+        };
+        if let Some(owner) = owner {
+            self.usages[owner].handlers.push(HandlerUse { name: on.handler, event: on.event, target: on.target, tags: tags.clone() });
+        }
     }
 
     fn reference(&mut self, name: String, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
