@@ -28,10 +28,11 @@ async function mount(html: string): Promise<HTMLElement> {
     return host;
 }
 
-function add(name: string, setup: (element: Element, context: { signal: AbortSignal }) => unknown, lazy = false) {
-    registry[name] = lazy
-        ? { tags: [], many: [], load: async () => setup }
-        : { tags: [], many: [], setup };
+type Options = { lazy?: boolean; refs?: string[]; many?: string[]; handlers?: string[] };
+
+function add(name: string, setup: (element: Element, refs: any, context: { signal: AbortSignal }) => unknown, options: Options = {}) {
+    const lists = { tags: [], refs: options.refs ?? [], many: options.many ?? [], handlers: options.handlers ?? [] };
+    registry[name] = options.lazy ? { ...lists, load: async () => setup } : { ...lists, setup };
 }
 
 function key(target: EventTarget, init: Record<string, unknown>) {
@@ -58,7 +59,7 @@ test("handlers bind on the setup element and inside it", async () => {
     add("basic", () => ({
         own: (event: Event, element: Element) => calls.push(["own", event.type, element.id]),
         child: (event: Event, element: Element) => calls.push(["child", event.type, element.id]),
-    }));
+    }), { handlers: ["own", "child"] });
     const host = await mount(`<section id="root" bq-setup="basic" bq-on:click="own"><button id="b" bq-on:click="child"></button></section>`);
 
     click(host.querySelector("#b")!);
@@ -70,7 +71,7 @@ test("handlers bind on the setup element and inside it", async () => {
 
 test("kebab-case handler names call camelCase handlers", async () => {
     const calls: string[] = [];
-    add("kebab", () => ({ filesPicked: () => calls.push("plain"), markDirty: () => calls.push("named") }));
+    add("kebab", () => ({ filesPicked: () => calls.push("plain"), markDirty: () => calls.push("named") }), { handlers: ["filesPicked", "markDirty"] });
     const host = await mount(`<div bq-setup="kebab"><input bq-on:change="files-picked" bq-on:input="kebab.mark-dirty"></div>`);
     const input = host.querySelector("input")!;
 
@@ -81,8 +82,8 @@ test("kebab-case handler names call camelCase handlers", async () => {
 
 test("one attribute can call several handlers", async () => {
     const calls: string[] = [];
-    add("outer", () => ({ schedule: () => calls.push("outer.schedule") }));
-    add("inner", () => ({ update: () => calls.push("inner.update"), count: () => calls.push("inner.count") }));
+    add("outer", () => ({ schedule: () => calls.push("outer.schedule") }), { handlers: ["schedule"] });
+    add("inner", () => ({ update: () => calls.push("inner.update"), count: () => calls.push("inner.count") }), { handlers: ["update", "count"] });
     const host = await mount(`<div bq-setup="outer"><form bq-setup="inner" bq-on:input=" update  outer.schedule count "><input></form></div>`);
 
     host.querySelector("input")!.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event);
@@ -94,7 +95,7 @@ test("one attribute can call several handlers", async () => {
 test("inject waits for a provider that loads later", async () => {
     const theme = context<{ color: string }>("theme");
     const seen: string[] = [];
-    add("late-provider", (element) => provide(element, theme, { color: "red" }), true);
+    add("late-provider", (element) => provide(element, theme, { color: "red" }), { lazy: true });
     add("early-child", async (element) => {
         seen.push((await inject(element, theme)).color);
     });
@@ -107,7 +108,7 @@ test("inject takes the nearest provider", async () => {
     const level = context<string>("level");
     const seen: string[] = [];
     add("outer-level", (element) => provide(element, level, "outer"));
-    add("inner-level", (element) => provide(element, level, "inner"), true);
+    add("inner-level", (element) => provide(element, level, "inner"), { lazy: true });
     add("reader", async (element) => {
         seen.push(await inject(element, level));
     });
@@ -120,7 +121,7 @@ test("inject skips ancestors that do not provide the key", async () => {
     const level = context<string>("skip");
     const seen: string[] = [];
     add("skip-provider", (element) => provide(element, level, "found"));
-    add("skip-middle", () => {}, true);
+    add("skip-middle", () => {}, { lazy: true });
     add("skip-reader", async (element) => {
         seen.push(await inject(element, level));
     });
@@ -153,6 +154,58 @@ test("inject fails when no setup above provides the key", async () => {
     ]);
 });
 
+test("refs go to the nearest setup that uses the name", async () => {
+    const seen: Record<string, unknown> = {};
+    add("tool-bar", (_element, refs) => void (seen.toolbar = refs), { refs: ["blockButton", "blockOption", "far"], many: ["blockOption"] });
+    add("pop-menu", (_element, refs, { signal }) => void (seen.menu = { ...refs, signal: signal instanceof AbortSignal }), { refs: ["button", "panel"] });
+    await mount(
+        `<div bq-setup="tool-bar"><div bq-setup="pop-menu" bq-ref="far"><button id="b" bq-ref="button block-button"></button><div id="p" bq-ref="panel"><i id="o1" bq-ref="block-option"></i><i id="o2" bq-ref="block-option"></i></div></div></div>`,
+    );
+    const ids = (value: unknown) => (Array.isArray(value) ? value.map((element) => element.id) : (value as Element | undefined)?.id ?? value);
+    const toolbar = seen.toolbar as Record<string, unknown>;
+    const menu = seen.menu as Record<string, unknown>;
+    assert.deepStrictEqual(Object.fromEntries(Object.entries(toolbar).map(([key, value]) => [key, ids(value)])), {
+        blockOption: ["o1", "o2"],
+        far: "",
+        blockButton: "b",
+    });
+    assert.deepStrictEqual(Object.fromEntries(Object.entries(menu).map(([key, value]) => [key, ids(value)])), { button: "b", panel: "p", signal: true });
+    assert.deepStrictEqual(warnings, []);
+});
+
+test("a prefix sends a ref to a named setup", async () => {
+    const seen: Record<string, unknown> = {};
+    add("outer-named", (_element, refs) => void (seen.outer = Object.keys(refs)), { refs: [] });
+    add("inner-named", (_element, refs) => void (seen.inner = Object.keys(refs)), { refs: ["icon"] });
+    await mount(`<div bq-setup="outer-named"><div bq-setup="inner-named"><i bq-ref="outer-named.icon"></i></div></div>`);
+    assert.deepStrictEqual(seen, { outer: ["icon"], inner: [] });
+});
+
+test("handlers go to the nearest setup that uses the name", async () => {
+    const calls: string[] = [];
+    add("bar", () => ({ setBlock: () => calls.push("bar.setBlock") }), { handlers: ["setBlock"] });
+    add("pop", () => ({ choose: () => calls.push("pop.choose") }), { handlers: ["choose"] });
+    const host = await mount(`<div bq-setup="bar"><div bq-setup="pop"><button bq-on:click="set-block choose"></button></div></div>`);
+
+    click(host.querySelector("button")!);
+    assert.deepStrictEqual(calls.sort(), ["bar.setBlock", "pop.choose"]);
+    assert.deepStrictEqual(warnings, []);
+});
+
+test("prevent and stop work without a handler", async () => {
+    const calls: string[] = [];
+    add("bare", () => ({ outer: () => calls.push("outer") }), { handlers: ["outer"] });
+    const host = await mount(`<div bq-setup="bare" bq-on:click="outer"><a bq-on:mousedown|prevent></a><b bq-on:click|stop></b></div>`);
+
+    const down = new window.MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    host.querySelector("a")!.dispatchEvent(down as unknown as Event);
+    click(host.querySelector("b")!);
+    click(host.querySelector("a")!);
+    assert.strictEqual(down.defaultPrevented, true);
+    assert.deepStrictEqual(calls, ["outer"]);
+    assert.deepStrictEqual(warnings, []);
+});
+
 test("setups that return nothing still run", async () => {
     let ran = false;
     add("plain", () => {
@@ -165,7 +218,7 @@ test("setups that return nothing still run", async () => {
 
 test("prevent and stop run only when the filters pass", async () => {
     const calls: string[] = [];
-    add("keys", () => ({ close: () => calls.push("close") }));
+    add("keys", () => ({ close: () => calls.push("close") }), { handlers: ["close"] });
     const host = await mount(`<div bq-setup="keys"><input bq-on:keydown|escape|prevent|stop="close"></div>`);
     const input = host.querySelector("input")!;
 
@@ -178,7 +231,7 @@ test("prevent and stop run only when the filters pass", async () => {
 
 test("key names, letters and arrows", async () => {
     const calls: string[] = [];
-    add("letters", () => ({ hit: (event: KeyboardEvent) => calls.push(event.key) }));
+    add("letters", () => ({ hit: (event: KeyboardEvent) => calls.push(event.key) }), { handlers: ["hit"] });
     const host = await mount(`<div bq-setup="letters"><input bq-on:keydown|s|enter|left="hit"></div>`);
     const input = host.querySelector("input")!;
 
@@ -192,7 +245,7 @@ test("system keys, mod and exact", async () => {
     add("system", () => ({
         save: () => calls.push("save"),
         shifted: () => calls.push("shifted"),
-    }));
+    }), { handlers: ["save", "shifted"] });
     const host = await mount(`<div bq-setup="system"><input bq-on:keydown|mod|exact|s="save"><textarea bq-on:keydown|shift|enter="shifted"></textarea></div>`);
     const input = host.querySelector("input")!;
     const textarea = host.querySelector("textarea")!;
@@ -207,7 +260,7 @@ test("system keys, mod and exact", async () => {
 
 test("mouse buttons", async () => {
     const calls: number[] = [];
-    add("mouse", () => ({ middle: (event: MouseEvent) => calls.push(event.button) }));
+    add("mouse", () => ({ middle: (event: MouseEvent) => calls.push(event.button) }), { handlers: ["middle"] });
     const host = await mount(`<div bq-setup="mouse"><a bq-on:mousedown|middle="middle"></a></div>`);
     const link = host.querySelector("a")!;
 
@@ -219,7 +272,7 @@ test("mouse buttons", async () => {
 
 test("self ignores events from children", async () => {
     const calls: string[] = [];
-    add("self", () => ({ backdrop: () => calls.push("backdrop") }));
+    add("self", () => ({ backdrop: () => calls.push("backdrop") }), { handlers: ["backdrop"] });
     const host = await mount(`<div bq-setup="self" bq-on:click|self="backdrop"><p></p></div>`);
 
     click(host.querySelector("p")!);
@@ -229,7 +282,7 @@ test("self ignores events from children", async () => {
 
 test("once runs a single time, after the filters pass", async () => {
     const calls: string[] = [];
-    add("once", () => ({ first: () => calls.push("first") }));
+    add("once", () => ({ first: () => calls.push("first") }), { handlers: ["first"] });
     const host = await mount(`<div bq-setup="once"><input bq-on:keydown|enter|once="first"></div>`);
     const input = host.querySelector("input")!;
 
@@ -244,7 +297,7 @@ test("window and document targets", async () => {
     add("targets", () => ({
         outside: (_event: Event, element: Element) => calls.push(`document:${element.localName}`),
         resize: () => calls.push("window"),
-    }));
+    }), { handlers: ["outside", "resize"] });
     await mount(`<details bq-setup="targets" bq-on:click|document="outside" bq-on:resize|window="resize"></details>`);
 
     click(document.body);
@@ -254,7 +307,7 @@ test("window and document targets", async () => {
 
 test("listeners stop when the setup element is removed", async () => {
     const calls: string[] = [];
-    add("removed", () => ({ outside: () => calls.push("outside") }));
+    add("removed", () => ({ outside: () => calls.push("outside") }), { handlers: ["outside"] });
     const host = await mount(`<div bq-setup="removed" bq-on:click|document="outside"></div>`);
 
     click(document.body);
@@ -266,7 +319,7 @@ test("listeners stop when the setup element is removed", async () => {
 
 test("listeners stop when bq-setup changes", async () => {
     const calls: string[] = [];
-    add("changing", () => ({ hit: () => calls.push("hit") }));
+    add("changing", () => ({ hit: () => calls.push("hit") }), { handlers: ["hit"] });
     const host = await mount(`<button bq-setup="changing" bq-on:click="hit"></button>`);
     const button = host.querySelector("button")!;
 
@@ -277,10 +330,10 @@ test("listeners stop when bq-setup changes", async () => {
     assert.deepStrictEqual(calls, ["hit"]);
 });
 
-test("two setups need a setup name", async () => {
+test("two setups that use the same name need a setup name", async () => {
     const calls: string[] = [];
-    add("first-setup", () => ({ save: () => calls.push("first") }));
-    add("second-setup", () => ({ save: () => calls.push("second") }));
+    add("first-setup", () => ({ save: () => calls.push("first") }), { handlers: ["save"] });
+    add("second-setup", () => ({ save: () => calls.push("second") }), { handlers: ["save"] });
     const host = await mount(
         `<form bq-setup="first-setup second-setup"><button id="named" bq-on:click="second-setup.save"></button><button id="bare" bq-on:click="save"></button></form>`,
     );
@@ -288,13 +341,24 @@ test("two setups need a setup name", async () => {
     click(host.querySelector("#named")!);
     click(host.querySelector("#bare")!);
     assert.deepStrictEqual(calls, ["second"]);
-    assert.ok(String(warnings[0]?.[0]).includes("inside more than one setup"));
+    assert.ok(String(warnings[0]?.[0]).includes("is used by more than one setup"));
+});
+
+test("two setups on one element, each with its own name", async () => {
+    const calls: string[] = [];
+    add("form-a", () => ({ update: () => calls.push("update") }), { handlers: ["update"] });
+    add("form-b", () => ({ schedule: () => calls.push("schedule") }), { handlers: ["schedule"] });
+    const host = await mount(`<form bq-setup="form-a form-b" bq-on:input="update schedule"><input></form>`);
+
+    host.querySelector("input")!.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event);
+    assert.deepStrictEqual(calls.sort(), ["schedule", "update"]);
+    assert.deepStrictEqual(warnings, []);
 });
 
 test("nested setups: nearest by default, outer by name", async () => {
     const calls: string[] = [];
-    add("outer-form", () => ({ changed: () => calls.push("outer") }));
-    add("inner-field", () => ({ changed: () => calls.push("inner") }));
+    add("outer-form", () => ({ changed: () => calls.push("outer") }), { handlers: ["changed"] });
+    add("inner-field", () => ({ changed: () => calls.push("inner") }), { handlers: ["changed"] });
     const host = await mount(
         `<form bq-setup="outer-form"><div bq-setup="inner-field"><input id="near" bq-on:input="changed"><input id="far" bq-on:input="outer-form.changed"></div></form>`,
     );
@@ -306,7 +370,7 @@ test("nested setups: nearest by default, outer by name", async () => {
 
 test("elements added later bind once, also after a move", async () => {
     const calls: string[] = [];
-    add("later", () => ({ hit: () => calls.push("hit") }));
+    add("later", () => ({ hit: () => calls.push("hit") }), { handlers: ["hit"] });
     const host = await mount(`<ul bq-setup="later"></ul>`);
     const list = host.querySelector("ul")!;
 
@@ -322,8 +386,8 @@ test("elements added later bind once, also after a move", async () => {
 
 test("async and lazy setups bind after they resolve", async () => {
     const calls: string[] = [];
-    add("async", async () => ({ hit: () => calls.push("async") }));
-    add("lazy", () => ({ hit: () => calls.push("lazy") }), true);
+    add("async", async () => ({ hit: () => calls.push("async") }), { handlers: ["hit"] });
+    add("lazy", () => ({ hit: () => calls.push("lazy") }), { lazy: true, handlers: ["hit"] });
     const host = await mount(`<button id="a" bq-setup="async" bq-on:click="hit"></button><button id="l" bq-setup="lazy" bq-on:click="hit"></button>`);
     await tick();
 
@@ -348,7 +412,7 @@ test("disconnect runs when bq-setup changes, with handlers", async () => {
     add("stops-with-handlers", () => ({
         hit: () => calls.push("hit"),
         disconnect: () => calls.push("disconnect"),
-    }));
+    }), { handlers: ["hit"] });
     const host = await mount(`<button bq-setup="stops-with-handlers" bq-on:click="hit"></button>`);
     const button = host.querySelector("button")!;
 
@@ -387,7 +451,7 @@ test("disconnect is not a handler and its errors are caught", async () => {
 
     click(host.querySelector("button")!);
     assert.strictEqual(stopped, 0);
-    assert.ok(String(warnings[0]?.[0]).includes(`has no handler "disconnect"`));
+    assert.ok(String(warnings[0]?.[0]).includes(`no setup above uses bq-on:click="disconnect"`));
     host.remove();
     await tick();
     console.error = original;
@@ -396,7 +460,7 @@ test("disconnect is not a handler and its errors are caught", async () => {
 });
 
 test("a missing handler warns", async () => {
-    add("missing", () => ({}));
+    add("missing", () => ({}), { handlers: ["nothing"] });
     await mount(`<button bq-setup="missing" bq-on:click="nothing"></button>`);
     assert.ok(String(warnings[0]?.[0]).includes(`setup "missing" has no handler "nothing"`));
 });
@@ -409,7 +473,7 @@ test("handler errors are caught", async () => {
         boom: () => {
             throw new Error("boom");
         },
-    }));
+    }), { handlers: ["boom"] });
     const host = await mount(`<button bq-setup="throws" bq-on:click="boom"></button>`);
 
     click(host.querySelector("button")!);

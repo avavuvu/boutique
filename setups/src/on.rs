@@ -53,7 +53,7 @@ const POINTER: [&str; 15] = [
     "touchcancel",
 ];
 
-fn kebab(text: &str) -> bool {
+pub fn kebab(text: &str) -> bool {
     text.chars().next().is_some_and(|first| first.is_ascii_lowercase())
         && !text.ends_with('-')
         && !text.contains("--")
@@ -122,7 +122,12 @@ pub fn parse(attribute: &str, value: &str) -> Result<Vec<On>, String> {
 
     let tokens: Vec<&str> = value.split_whitespace().collect();
     if tokens.is_empty() {
-        return Err(format!("{attribute} needs a handler, for example {attribute}=\"save\""));
+        if seen.contains("prevent") || seen.contains("stop") {
+            return Ok(Vec::new());
+        }
+        return Err(format!(
+            "{attribute} needs a handler, for example {attribute}=\"save\". Only `prevent` and `stop` can be used without a handler"
+        ));
     }
     tokens.into_iter().map(|token| handler(attribute, token, &event, &target)).collect()
 }

@@ -648,7 +648,7 @@ enum Rest {
 }
 
 fn merges(name: &str) -> bool {
-    name == "bq-setup" || name.starts_with("bq-on:")
+    name == "bq-setup" || name == "bq-ref" || name.starts_with("bq-on:")
 }
 
 fn setup_attrs(attrs: &mut [Attribute]) {

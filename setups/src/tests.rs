@@ -51,10 +51,123 @@ fn several_setups_on_one_element() {
     let (types, ..) = ok(&[(0, "a.rs", r##"
         setup!(A);
         setup!(B);
-        fn view() -> Markup { html! { .box bq-setup={ (A) " " (B) } { span bq-ref="x" {} } } }
+        fn view() -> Markup { html! { .box bq-setup={ (A) " " (B) } { span bq-ref="a.x b.y" {} } } }
     "##)]);
     assert_eq!(setup(&types, "A"), r#"Setup<"div", { x: "span" }>"#);
-    assert_eq!(setup(&types, "B"), r#"Setup<"div", { x: "span" }>"#);
+    assert_eq!(setup(&types, "B"), r#"Setup<"div", { y: "span" }>"#);
+
+    let errors = run(&[(0, "a.rs", r##"
+        setup!(A);
+        setup!(B);
+        fn view() -> Markup { html! { .box bq-setup={ (A) " " (B) } { span bq-ref="x" {} } } }
+    "##)])
+    .unwrap_err();
+    assert_eq!(
+        errors,
+        [r#"a.rs:4: bq-ref="x" is inside more than one setup (a, b); write the setup name, for example bq-ref="a.x""#]
+    );
+}
+
+const MENU: &str = r##"
+    setup!(Menu);
+    #[component]
+    pub fn menu(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+        html! {
+            div.menu bq-setup=(Menu) {
+                button bq-ref="button" bq-on:click="toggle" (..attrs) {}
+                div bq-ref="panel" bq-on:mousedown|prevent bq-on:click="choose" { (children) }
+            }
+        }
+    }
+"##;
+
+#[test]
+fn children_belong_to_the_code_that_wrote_them() {
+    let (types, registry, warnings) = ok(&[
+        (0, "menu.rs", MENU),
+        (0, "a.rs", r##"
+            setup!(Toolbar);
+            fn view() -> Markup {
+                html! {
+                    div bq-setup=(Toolbar) {
+                        Menu bq-ref="block-button" {
+                            @for block in blocks { button bq-ref="block-option" bq-on:click="set-block" {} }
+                        }
+                    }
+                }
+            }
+        "##),
+    ]);
+    assert_eq!(setup(&types, "Menu"), r#"Setup<"div", { button: "button"; panel: "div" }, { choose: { event: "click"; tag: "div" }; toggle: { event: "click"; tag: "button" } }>"#);
+    assert_eq!(
+        setup(&types, "Toolbar"),
+        r#"Setup<"div", { blockButton: "button"; blockOption: ("button")[] }, { setBlock: { event: "click"; tag: "button" } }>"#
+    );
+    assert!(registry.contains("\"menu\": {\n        tags: [\"div\"],\n        refs: [\"button\", \"panel\"],\n        many: [],\n        handlers: [\"choose\", \"toggle\"],"), "{registry}");
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn a_nearer_setup_with_the_same_name_is_an_error() {
+    let errors = run(&[
+        (0, "menu.rs", MENU),
+        (0, "a.rs", r##"
+            setup!(Toolbar);
+            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu { b bq-ref="panel" bq-on:click="choose" {} } } } }
+        "##),
+    ])
+    .unwrap_err();
+    assert_eq!(
+        errors,
+        [
+            r#"a.rs:3: bq-ref="panel" is written for Toolbar, but Menu also uses the name `panel` and is nearer, so Menu would get it. Rename one of them, or write the setup name, for example "toolbar.panel""#,
+            r#"a.rs:3: bq-on:click="choose" is written for Toolbar, but Menu also uses the name `choose` and is nearer, so Menu would get it. Rename one of them, or write the setup name, for example "toolbar.choose""#,
+        ]
+    );
+
+    let (types, ..) = ok(&[
+        (0, "menu.rs", MENU),
+        (0, "a.rs", r##"
+            setup!(Toolbar);
+            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu { b bq-ref="toolbar.panel" bq-on:click="toolbar.choose" {} } } } }
+        "##),
+    ]);
+    assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { panel: "b" }, { choose: { event: "click"; tag: "b" } }>"#);
+}
+
+#[test]
+fn prefixed_ref_gets_the_flags_of_its_owner() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(Outer);
+        setup!(Inner);
+        fn view() -> Markup {
+            html! {
+                div bq-setup=(Outer) {
+                    @for row in rows {
+                        div bq-setup=(Inner) { i bq-ref="outer.icon own" {} }
+                    }
+                }
+            }
+        }
+    "##)]);
+    assert_eq!(setup(&types, "Outer"), r#"Setup<"div", { icon: ("i")[] }>"#);
+    assert_eq!(setup(&types, "Inner"), r#"Setup<"div", { own: "i" }>"#);
+}
+
+#[test]
+fn handler_without_a_value_needs_prevent_or_stop() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
+        setup!(Menu);
+        fn view() -> Markup { html! { nav bq-setup=(Menu) { a bq-on:mousedown|prevent {} b bq-on:click|stop {} } } }
+    "##)]);
+    assert_eq!(setup(&types, "Menu"), r#"Setup<"nav">"#);
+
+    let errors = run(&[(0, "a.rs", r##"
+        setup!(Menu);
+        fn view() -> Markup { html! { nav bq-setup=(Menu) { a bq-on:mousedown|once {} } } }
+    "##)])
+    .unwrap_err();
+    assert!(errors[0].contains("Only `prevent` and `stop` can be used without a handler"), "{errors:?}");
 }
 
 #[test]
@@ -196,7 +309,7 @@ fn children_pass_through_nested_components() {
         "##),
     ]);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(setup(&types, "Inner"), r#"Setup<"div", { x: "span" }>"#);
+    assert_eq!(setup(&types, "Inner"), r#"Setup<"div">"#);
     assert_eq!(setup(&types, "Extra"), r#"Setup<"div", { x: "span" }>"#);
 }
 
@@ -280,13 +393,13 @@ fn errors_are_reported_once() {
         setup!(Menu);
         #[component]
         pub fn item(children: Markup) -> Markup { html! { a bq-ref="Bad" {} (children) } }
-        fn view() -> Markup { html! { nav bq-setup=(Menu) { Item {} Item {} } div bq-setup=(Missing) { i bq-ref="signal" {} } } }
+        fn view() -> Markup { html! { nav bq-setup=(Menu) { Item {} Item {} } div bq-setup=(Missing) { i bq-ref="x" {} } } }
     "##)])
     .unwrap_err();
     assert_eq!(
         errors,
         [
-            r#"a.rs:4: bq-ref="Bad" must be lowercase kebab-case, for example bq-ref="close-button""#,
+            r#"a.rs:4: bq-ref="Bad" must be lowercase kebab-case, for example bq-ref="close-button" or bq-ref="menu.close-button""#,
             "a.rs:5: bq-setup=(Missing) has no setup!(Missing) declaration",
         ]
     );
@@ -532,11 +645,10 @@ fn allowed_modifier_combinations() {
 }
 
 #[test]
-fn reserved_reference_name() {
-    let errors = run(&[(0, "a.rs", r##"
+fn signal_and_props_are_normal_ref_names() {
+    let (types, ..) = ok(&[(0, "a.rs", r##"
         setup!(Menu);
-        fn view() -> Markup { html! { nav bq-setup=(Menu) { i bq-ref="signal" {} } } }
-    "##)])
-    .unwrap_err();
-    assert_eq!(errors, [r#"a.rs:3: bq-ref="signal" is a reserved name"#]);
+        fn view() -> Markup { html! { nav bq-setup=(Menu) { i bq-ref="signal props" {} } } }
+    "##)]);
+    assert_eq!(setup(&types, "Menu"), r#"Setup<"nav", { props: "i"; signal: "i" }>"#);
 }

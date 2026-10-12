@@ -60,6 +60,19 @@ fn through_spread_and_components() {
 }
 
 #[test]
+fn modifiers_without_a_handler() {
+    let result = html! { a bq-on:mousedown|prevent {} };
+    assert_eq!(result.into_string(), r#"<a bq-on:mousedown|prevent></a>"#);
+}
+
+#[test]
+fn refs_merge_like_class() {
+    let extra = attrs!("bq-ref" = "block-button");
+    let result = html! { button bq-ref="button" (..extra) {} };
+    assert_eq!(result.into_string(), r#"<button bq-ref="button block-button"></button>"#);
+}
+
+#[test]
 fn same_attribute_merges_on_one_element() {
     let result = html! { input bq-on:input="a" type="text" bq-on:input="menu.b"; };
     assert_eq!(result.into_string(), r#"<input bq-on:input="a menu.b" type="text">"#);

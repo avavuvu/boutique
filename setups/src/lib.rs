@@ -17,9 +17,7 @@ use syn::visit::Visit;
 
 use index::Index;
 use on::Target;
-use walk::{Tags, Usage, Walker};
-
-const RESERVED: [&str; 2] = ["signal", "props"];
+use walk::{Claim, Kind, Tags, Usage, Walker};
 
 struct Root {
     dir: PathBuf,
@@ -155,7 +153,7 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
             }
         }
     }
-    let (usages, mut walk_errors, mut warnings) = walker.finish();
+    let (usages, claims, mut walk_errors, mut warnings) = walker.finish();
     errors.append(&mut walk_errors);
 
     let mut by_name: BTreeMap<String, Declaration> = BTreeMap::new();
@@ -171,6 +169,7 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
     }
 
     let merged = merge(&usages, &by_name, &mut errors);
+    collisions(&usages, &claims, &merged, &mut errors);
 
     for (name, declaration) in &by_name {
         if !merged.contains_key(name) {
@@ -254,11 +253,15 @@ fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged:
         let setup = merged.get(name).unwrap_or(&empty);
         let export = name.to_lower_camel_case();
         let tags = if setup.any { String::new() } else { quoted_list(setup.tags.iter()) };
+        let refs = quoted_list(setup.refs.keys());
         let many = quoted_list(setup.refs.iter().filter(|(_, reference)| reference.many).map(|(key, _)| key));
+        let handlers = quoted_list(setup.handlers.keys());
 
         out.push_str(&format!("    \"{}\": {{\n", name.to_kebab_case()));
         out.push_str(&format!("        tags: [{tags}],\n"));
+        out.push_str(&format!("        refs: [{refs}],\n"));
         out.push_str(&format!("        many: [{many}],\n"));
+        out.push_str(&format!("        handlers: [{handlers}],\n"));
         if declaration.eager {
             out.push_str(&format!("        setup: {export} satisfies setups.{name},\n"));
         } else {
@@ -357,11 +360,6 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors:
 
         let mut seen = BTreeSet::new();
         for reference in &usage.refs {
-            if RESERVED.contains(&reference.name.as_str()) {
-                errors.push(format!("{}: bq-ref=\"{}\" is a reserved name", reference.location, reference.name));
-                continue;
-            }
-
             let first = seen.insert(reference.name.clone());
             let entry = setup.refs.entry(reference.name.clone()).or_default();
             add_tags(&reference.tags, &mut entry.tags, &mut entry.any);
@@ -382,6 +380,32 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors:
     }
 
     merged
+}
+
+fn collisions(usages: &[Usage], claims: &[Claim], merged: &BTreeMap<String, Merged>, errors: &mut Vec<String>) {
+    let uses = |setup: &str, kind: Kind, name: &str| {
+        merged.get(setup).is_some_and(|merged| match kind {
+            Kind::Ref => merged.refs.contains_key(name),
+            Kind::Handler => merged.handlers.contains_key(name),
+        })
+    };
+    for claim in claims {
+        let owner = &usages[claim.owner].name;
+        for &other in &claim.between {
+            let other = &usages[other].name;
+            if uses(other, claim.kind, &claim.name) {
+                errors.push(format!(
+                    "{}: {} is written for {owner}, but {other} also uses the name `{}` and is nearer, so {other} would get it. \
+                     Rename one of them, or write the setup name, for example \"{}.{}\"",
+                    claim.location,
+                    claim.text,
+                    claim.name.to_kebab_case(),
+                    owner.to_kebab_case(),
+                    claim.name.to_kebab_case()
+                ));
+            }
+        }
+    }
 }
 
 fn add_tags(tags: &Tags, into: &mut BTreeSet<String>, any: &mut bool) {

@@ -1,6 +1,7 @@
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     collections::{BTreeSet, HashSet},
+    rc::Rc,
 };
 
 use bq_html::{
@@ -51,15 +52,67 @@ pub struct RefUse {
     pub tags: Tags,
     pub optional: bool,
     pub many: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Ref,
+    Handler,
+}
+
+pub struct Claim {
+    pub kind: Kind,
+    pub name: String,
+    pub owner: usize,
+    pub between: Vec<usize>,
+    pub text: String,
     pub location: String,
+}
+
+#[derive(Clone, Copy)]
+struct Owner {
+    usage: usize,
+    optional: bool,
+    many: bool,
 }
 
 #[derive(Clone, Default)]
 struct Scope {
-    owners: Vec<usize>,
-    all: Vec<usize>,
-    optional: bool,
-    many: bool,
+    lexical: Vec<usize>,
+    path: Vec<Vec<Owner>>,
+}
+
+impl Scope {
+    fn flagged(&self, optional: bool, many: bool) -> Scope {
+        let mut scope = self.clone();
+        for owner in scope.path.iter_mut().flatten() {
+            owner.optional |= optional;
+            owner.many |= many;
+        }
+        scope
+    }
+
+    fn owner(&self, usage: usize) -> Option<Owner> {
+        self.path.iter().flatten().find(|owner| owner.usage == usage).copied()
+    }
+
+    fn between(&self, usage: usize) -> Vec<usize> {
+        let mut between = Vec::new();
+        for element in &self.path {
+            between.extend(element.iter().filter(|owner| owner.usage != usage).map(|owner| owner.usage));
+            if element.iter().any(|owner| owner.usage == usage) {
+                break;
+            }
+        }
+        between
+    }
+}
+
+#[derive(Clone, Debug)]
+struct RefName {
+    setup: Option<String>,
+    name: String,
+    text: String,
 }
 
 #[derive(Clone)]
@@ -73,16 +126,37 @@ struct Cx<'c> {
 #[derive(Clone, Default)]
 struct CallAttrs {
     setups: Vec<(String, String)>,
-    reference: Option<(String, String)>,
+    refs: Vec<(RefName, String)>,
     ons: Vec<(On, String)>,
 }
 
-struct Frame<'c> {
+#[derive(Clone)]
+struct Outside {
     attrs: CallAttrs,
+    lexical: Vec<usize>,
+    function: Option<usize>,
+    created: Rc<RefCell<Vec<usize>>>,
+}
+
+struct Frame<'c> {
+    outside: Vec<Outside>,
+    created: Rc<RefCell<Vec<usize>>>,
     children: Option<&'c Markups<Element>>,
     caller: Cx<'c>,
     attrs_used: Cell<bool>,
     children_used: Cell<bool>,
+}
+
+fn owners_or(own: &[usize], outer: &[usize]) -> Vec<usize> {
+    if own.is_empty() { outer.to_vec() } else { own.to_vec() }
+}
+
+fn children_lexical(created: &[usize], caller: &[usize], path: &[Vec<Owner>]) -> Vec<usize> {
+    let lexical = owners_or(created, caller);
+    if !lexical.is_empty() {
+        return lexical;
+    }
+    path.first().map(|element| element.iter().map(|owner| owner.usage).collect()).unwrap_or_default()
 }
 
 pub fn parse(tokens: TokenStream) -> Option<Markups<Element>> {
@@ -111,6 +185,7 @@ pub struct Walker<'a> {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub reached: HashSet<usize>,
+    pub claims: Vec<Claim>,
     followed: HashSet<usize>,
     orphans: Vec<(Option<usize>, String)>,
     stack: Vec<usize>,
@@ -124,6 +199,7 @@ impl<'a> Walker<'a> {
             errors: Vec::new(),
             warnings: Vec::new(),
             reached: HashSet::new(),
+            claims: Vec::new(),
             followed: HashSet::new(),
             orphans: Vec::new(),
             stack: Vec::new(),
@@ -136,13 +212,13 @@ impl<'a> Walker<'a> {
         self.markups(&block.markups, &cx);
     }
 
-    pub fn finish(mut self) -> (Vec<Usage>, Vec<String>, Vec<String>) {
+    pub fn finish(mut self) -> (Vec<Usage>, Vec<Claim>, Vec<String>, Vec<String>) {
         for (function, message) in std::mem::take(&mut self.orphans) {
             if !function.is_some_and(|function| self.followed.contains(&function)) {
                 self.warnings.push(message);
             }
         }
-        (self.usages, unique(self.errors), unique(self.warnings))
+        (self.usages, self.claims, unique(self.errors), unique(self.warnings))
     }
 
     fn location(&self, file: usize, span: Span) -> String {
@@ -163,7 +239,7 @@ impl<'a> Walker<'a> {
             Markup::Element(element) => self.element(element, cx),
             Markup::ControlFlow(control_flow) => match &control_flow.kind {
                 ControlFlowKind::If(if_) => {
-                    let branch = Cx { scope: Scope { optional: true, ..cx.scope.clone() }, ..cx.clone() };
+                    let branch = Cx { scope: cx.scope.flagged(true, false), ..cx.clone() };
                     let mut next = Some(if_);
                     while let Some(if_) = next.take() {
                         self.markups(&if_.then_branch.markups, &branch);
@@ -175,15 +251,15 @@ impl<'a> Walker<'a> {
                     }
                 }
                 ControlFlowKind::For(for_) => {
-                    let each = Cx { scope: Scope { many: true, ..cx.scope.clone() }, ..cx.clone() };
+                    let each = Cx { scope: cx.scope.flagged(false, true), ..cx.clone() };
                     self.markups(&for_.body.markups, &each);
                 }
                 ControlFlowKind::While(while_) => {
-                    let branch = Cx { scope: Scope { optional: true, ..cx.scope.clone() }, ..cx.clone() };
+                    let branch = Cx { scope: cx.scope.flagged(true, false), ..cx.clone() };
                     self.markups(&while_.body.markups, &branch);
                 }
                 ControlFlowKind::Match(match_) => {
-                    let arm = Cx { scope: Scope { optional: true, ..cx.scope.clone() }, ..cx.clone() };
+                    let arm = Cx { scope: cx.scope.flagged(true, false), ..cx.clone() };
                     for match_arm in &match_.arms {
                         self.markup(&match_arm.body, &arm);
                     }
@@ -201,13 +277,14 @@ impl<'a> Walker<'a> {
         if let Some(frame) = cx.frame.filter(|_| is_children(expr)) {
             frame.children_used.set(true);
             if let Some(children) = frame.children {
-                let inner = Cx { scope: cx.scope.clone(), ..frame.caller.clone() };
+                let lexical = children_lexical(&frame.created.borrow(), &frame.caller.scope.lexical, &cx.scope.path);
+                let inner = Cx { scope: Scope { lexical, path: cx.scope.path.clone() }, ..frame.caller.clone() };
                 self.markups(children, &inner);
             }
             return;
         }
 
-        if !cx.scope.owners.is_empty()
+        if !cx.scope.path.is_empty()
             && let Some(name) = called_function(expr)
             && let location = self.location(cx.file, expr.span())
             && let Some(function) = self.lookup(&name, cx.file, false, &location)
@@ -248,30 +325,14 @@ impl<'a> Walker<'a> {
         };
 
         let own = self.call_attrs(&element.attrs, &location);
-        let forwarded = cx.frame.filter(|_| element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. })));
-
-        if let Some((reference, location)) = own.reference {
-            self.reference(reference, &tags, &cx.scope, location, cx.function);
-        }
-        let mut setups = own.setups;
-        let mut ons: Vec<(On, String, Option<usize>)> =
-            own.ons.into_iter().map(|(on, location)| (on, location, cx.function)).collect();
-        if let Some(frame) = forwarded {
-            frame.attrs_used.set(true);
-            if let Some((reference, location)) = frame.attrs.reference.clone() {
-                self.reference(reference, &tags, &cx.scope, location, frame.caller.function);
+        let outside = match cx.frame {
+            Some(frame) if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. })) => {
+                frame.attrs_used.set(true);
+                frame.outside.clone()
             }
-            setups.extend(frame.attrs.setups.iter().cloned());
-            for (on, call_site) in &frame.attrs.ons {
-                ons.push((on.clone(), call_site.clone(), frame.caller.function));
-            }
-        }
-        let has_setups = !setups.is_empty();
-        let inner = self.owners(&tags, setups, cx.scope.clone());
-        let element_owners = if has_setups { inner.owners.clone() } else { Vec::new() };
-        for (on, location, function) in ons {
-            self.handler(on, &tags, &element_owners, &cx.scope, location, function);
-        }
+            _ => Vec::new(),
+        };
+        let inner = self.place(&tags, own, &outside, cx);
 
         if let ElementBody::Block(block) = &element.body {
             self.markups(&block.markups, &Cx { scope: inner, ..cx.clone() });
@@ -279,16 +340,18 @@ impl<'a> Walker<'a> {
     }
 
     fn component(&mut self, name: &str, element: &Element, location: &str, cx: &Cx) {
-        let mut attrs = self.call_attrs(&element.attrs, location);
+        let created = Rc::new(RefCell::new(Vec::new()));
+        let mut outside = vec![Outside {
+            attrs: self.call_attrs(&element.attrs, location),
+            lexical: cx.scope.lexical.clone(),
+            function: cx.function,
+            created: created.clone(),
+        }];
         if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. }))
             && let Some(frame) = cx.frame
         {
             frame.attrs_used.set(true);
-            if attrs.reference.is_none() {
-                attrs.reference = frame.attrs.reference.clone();
-            }
-            attrs.setups.extend(frame.attrs.setups.iter().cloned());
-            attrs.ons.extend(frame.attrs.ons.iter().cloned());
+            outside.extend(frame.outside.iter().cloned());
         }
         let children = match &element.body {
             ElementBody::Block(block) => Some(&block.markups),
@@ -297,20 +360,22 @@ impl<'a> Walker<'a> {
 
         let function = self.lookup(name, cx.file, true, location).filter(|function| !self.stack.contains(function));
         let Some(function) = function else {
-            let inner = self.apply(&Tags::Unknown, attrs, cx);
+            let inner = self.place(&Tags::Unknown, CallAttrs::default(), &outside, cx);
             if let Some(children) = children {
-                self.markups(children, &Cx { scope: inner, ..cx.clone() });
+                let lexical = children_lexical(&created.borrow(), &cx.scope.lexical, &inner.path);
+                self.markups(children, &Cx { scope: Scope { lexical, path: inner.path }, ..cx.clone() });
             }
             return;
         };
 
         self.reached.insert(function);
-        if !cx.scope.owners.is_empty() {
+        if !cx.scope.path.is_empty() {
             self.followed.insert(function);
         }
 
         let frame = Frame {
-            attrs,
+            outside,
+            created: created.clone(),
             children,
             caller: cx.clone(),
             attrs_used: Cell::new(false),
@@ -329,15 +394,16 @@ impl<'a> Walker<'a> {
         }
         self.stack.pop();
 
-        let inner = if frame.attrs_used.get() {
-            cx.scope.clone()
+        let path = if frame.attrs_used.get() {
+            cx.scope.path.clone()
         } else {
-            self.apply(&Tags::Unknown, frame.attrs.clone(), cx)
+            self.place(&Tags::Unknown, CallAttrs::default(), &frame.outside, cx).path
         };
         if !frame.children_used.get()
             && let Some(children) = children
         {
-            self.markups(children, &Cx { scope: inner, ..cx.clone() });
+            let lexical = children_lexical(&created.borrow(), &cx.scope.lexical, &path);
+            self.markups(children, &Cx { scope: Scope { lexical, path }, ..cx.clone() });
         }
     }
 
@@ -352,13 +418,14 @@ impl<'a> Walker<'a> {
                     }
                 }
                 "bq-ref" => {
-                    if let Some(reference) = self.ref_name(attr_type, location) {
-                        call.reference = Some((reference, location.to_string()));
+                    for reference in self.ref_names(attr_type, location) {
+                        call.refs.push((reference, location.to_string()));
                     }
                 }
                 attribute if attribute.starts_with("bq-on:") => {
                     let value = match attr_type {
                         AttributeType::Normal { value: Markup::Lit(lit), .. } => lit.lit.value(),
+                        AttributeType::Empty(None) => String::new(),
                         _ => {
                             self.errors.push(format!(
                                 "{location}: {attribute} needs a fixed string, for example {attribute}=\"save\""
@@ -377,93 +444,130 @@ impl<'a> Walker<'a> {
         call
     }
 
-    fn apply(&mut self, tags: &Tags, attrs: CallAttrs, cx: &Cx) -> Scope {
-        if let Some((reference, location)) = attrs.reference {
-            self.reference(reference, tags, &cx.scope, location, cx.function);
+    fn place(&mut self, tags: &Tags, own: CallAttrs, outside: &[Outside], cx: &Cx) -> Scope {
+        for (reference, location) in own.refs {
+            self.reference(reference, tags, &cx.scope.lexical, &cx.scope, location, cx.function);
         }
-        let has_setups = !attrs.setups.is_empty();
-        let inner = self.owners(tags, attrs.setups, cx.scope.clone());
-        let element_owners = if has_setups { inner.owners.clone() } else { Vec::new() };
-        for (on, location) in attrs.ons {
-            self.handler(on, tags, &element_owners, &cx.scope, location, cx.function);
+        for item in outside {
+            for (reference, location) in &item.attrs.refs {
+                self.reference(reference.clone(), tags, &item.lexical, &cx.scope, location.clone(), item.function);
+            }
+        }
+
+        let own_usages = self.create(tags, own.setups);
+        let mut entry = own_usages.clone();
+        let mut outside_usages = Vec::new();
+        for item in outside {
+            let usages = self.create(tags, item.attrs.setups.clone());
+            entry.extend(&usages);
+            *item.created.borrow_mut() = usages.clone();
+            outside_usages.push(usages);
+        }
+
+        let mut path = cx.scope.path.clone();
+        if !entry.is_empty() {
+            path.insert(0, entry.into_iter().map(|usage| Owner { usage, optional: false, many: false }).collect());
+        }
+        let inner = Scope { lexical: owners_or(&own_usages, &cx.scope.lexical), path };
+
+        for (on, location) in own.ons {
+            self.handler(on, tags, &inner.lexical, &inner, location, cx.function);
+        }
+        for (item, usages) in outside.iter().zip(outside_usages) {
+            let lexical = owners_or(&usages, &item.lexical);
+            for (on, location) in &item.attrs.ons {
+                self.handler(on.clone(), tags, &lexical, &inner, location.clone(), item.function);
+            }
         }
         inner
     }
 
-    fn owners(&mut self, tags: &Tags, setups: Vec<(String, String)>, outer: Scope) -> Scope {
-        if setups.is_empty() {
-            return outer;
-        }
-        let mut owners = Vec::new();
-        for (name, location) in setups {
-            self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), handlers: Vec::new(), location });
-            owners.push(self.usages.len() - 1);
-        }
-        let all = owners.iter().copied().chain(outer.all).collect();
-        Scope { owners, all, optional: false, many: false }
+    fn create(&mut self, tags: &Tags, setups: Vec<(String, String)>) -> Vec<usize> {
+        setups
+            .into_iter()
+            .map(|(name, location)| {
+                self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), handlers: Vec::new(), location });
+                self.usages.len() - 1
+            })
+            .collect()
     }
 
-    fn handler(&mut self, on: On, tags: &Tags, element_owners: &[usize], scope: &Scope, location: String, function: Option<usize>) {
+    fn owner(
+        &mut self,
+        setup: Option<&str>,
+        lexical: &[usize],
+        scope: &Scope,
+        text: &str,
+        location: &str,
+        function: Option<usize>,
+    ) -> Option<(usize, bool)> {
+        if let Some(setup) = setup {
+            let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name.to_kebab_case() == setup);
+            if found.is_none() {
+                let message = format!("{location}: {text} is not inside an element with bq-setup=({})", setup.to_upper_camel_case());
+                self.orphans.push((function, message));
+            }
+            return found.map(|owner| (owner.usage, false));
+        }
+
+        let mut names: Vec<String> = lexical.iter().map(|&owner| self.usages[owner].name.to_kebab_case()).collect();
+        names.dedup();
+        match (lexical, names.as_slice()) {
+            ([], _) => {
+                self.orphans.push((function, format!("{location}: {text} is not inside an element with bq-setup")));
+                None
+            }
+            ([owner, ..], [_]) => Some((*owner, true)),
+            _ => {
+                let (name, value) = text.split_once('=').unwrap_or((text, "\"\""));
+                let value = value.trim_matches('"');
+                self.errors.push(format!(
+                    "{location}: {text} is inside more than one setup ({}); write the setup name, for example {name}=\"{}.{value}\"",
+                    names.join(", "),
+                    names[0]
+                ));
+                None
+            }
+        }
+    }
+
+    fn claim(&mut self, kind: Kind, name: &str, owner: usize, scope: &Scope, text: String, location: String) {
+        let between = scope.between(owner);
+        if !between.is_empty() {
+            self.claims.push(Claim { kind, name: name.to_string(), owner, between, text, location });
+        }
+    }
+
+    fn handler(&mut self, on: On, tags: &Tags, lexical: &[usize], scope: &Scope, location: String, function: Option<usize>) {
         let value = match &on.setup {
             Some(setup) => format!("{setup}.{}", on.handler),
             None => on.handler.clone(),
         };
-        let owner = match &on.setup {
-            Some(setup) => {
-                let found = element_owners
-                    .iter()
-                    .chain(&scope.all)
-                    .copied()
-                    .find(|&owner| self.usages[owner].name.to_kebab_case() == *setup);
-                if found.is_none() {
-                    let message = format!("{location}: {}=\"{value}\" is not inside an element with bq-setup=({})", on.attribute, setup.to_upper_camel_case());
-                    self.orphans.push((function, message));
-                }
-                found
-            }
-            None => {
-                let nearest = if element_owners.is_empty() { &scope.owners } else { element_owners };
-                let mut names: Vec<String> = nearest.iter().map(|&owner| self.usages[owner].name.to_kebab_case()).collect();
-                names.dedup();
-                match (nearest, names.as_slice()) {
-                    ([], _) => {
-                        let message = format!("{location}: {}=\"{value}\" is not inside an element with bq-setup", on.attribute);
-                        self.orphans.push((function, message));
-                        None
-                    }
-                    (_, [_]) => nearest.first().copied(),
-                    _ => {
-                        self.errors.push(format!(
-                            "{location}: {}=\"{value}\" is inside more than one setup ({}); write the setup name, for example {}=\"{}.{value}\"",
-                            on.attribute,
-                            names.join(", "),
-                            on.attribute,
-                            names[0]
-                        ));
-                        None
-                    }
-                }
-            }
+        let text = format!("{}=\"{value}\"", on.attribute);
+        let Some((owner, unprefixed)) = self.owner(on.setup.as_deref(), lexical, scope, &text, &location, function) else {
+            return;
         };
-        if let Some(owner) = owner {
-            self.usages[owner].handlers.push(HandlerUse { name: on.key, event: on.event, target: on.target, tags: tags.clone() });
+        if unprefixed {
+            self.claim(Kind::Handler, &on.key, owner, scope, text, location);
         }
+        self.usages[owner].handlers.push(HandlerUse { name: on.key, event: on.event, target: on.target, tags: tags.clone() });
     }
 
-    fn reference(&mut self, name: String, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
-        if scope.owners.is_empty() {
-            let message = format!("{location}: bq-ref=\"{name}\" is not inside an element with bq-setup");
-            self.orphans.push((function, message));
+    fn reference(&mut self, reference: RefName, tags: &Tags, lexical: &[usize], scope: &Scope, location: String, function: Option<usize>) {
+        let text = format!("bq-ref=\"{}\"", reference.text);
+        let Some((owner, unprefixed)) = self.owner(reference.setup.as_deref(), lexical, scope, &text, &location, function) else {
+            return;
+        };
+        if unprefixed {
+            self.claim(Kind::Ref, &reference.name, owner, scope, text, location);
         }
-        for &owner in &scope.owners {
-            self.usages[owner].refs.push(RefUse {
-                name: name.clone(),
-                tags: tags.clone(),
-                optional: scope.optional,
-                many: scope.many,
-                location: location.clone(),
-            });
-        }
+        let flags = scope.owner(owner);
+        self.usages[owner].refs.push(RefUse {
+            name: reference.name,
+            tags: tags.clone(),
+            optional: flags.is_some_and(|flags| flags.optional),
+            many: flags.is_some_and(|flags| flags.many),
+        });
     }
 
     fn lookup(&mut self, name: &str, file: usize, component: bool, location: &str) -> Option<usize> {
@@ -517,26 +621,32 @@ impl<'a> Walker<'a> {
         names
     }
 
-    fn ref_name(&mut self, value: &AttributeType, location: &str) -> Option<String> {
-        let text = match value {
-            AttributeType::Normal { value: Markup::Lit(lit), .. } => Some(lit.lit.value()),
-            _ => None,
-        };
-
-        let Some(text) = text else {
+    fn ref_names(&mut self, value: &AttributeType, location: &str) -> Vec<RefName> {
+        let AttributeType::Normal { value: Markup::Lit(lit), .. } = value else {
             self.errors.push(format!("{location}: bq-ref needs a fixed string, for example bq-ref=\"select\""));
-            return None;
+            return Vec::new();
         };
 
-        let valid = text.chars().next().is_some_and(|first| first.is_ascii_lowercase())
-            && !text.ends_with('-')
-            && !text.contains("--")
-            && text.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-');
-        if !valid {
-            self.errors.push(format!("{location}: bq-ref=\"{text}\" must be lowercase kebab-case, for example bq-ref=\"close-button\""));
-            return None;
+        let value = lit.lit.value();
+        if value.split_whitespace().next().is_none() {
+            self.errors.push(format!("{location}: bq-ref needs a name, for example bq-ref=\"select\""));
         }
-        Some(text.to_lower_camel_case())
+
+        let mut names = Vec::new();
+        for text in value.split_whitespace() {
+            let (setup, name) = match text.split_once('.') {
+                Some((setup, name)) => (Some(setup), name),
+                None => (None, text),
+            };
+            if !on::kebab(name) || setup.is_some_and(|setup| !on::kebab(setup)) {
+                self.errors.push(format!(
+                    "{location}: bq-ref=\"{text}\" must be lowercase kebab-case, for example bq-ref=\"close-button\" or bq-ref=\"menu.close-button\""
+                ));
+                continue;
+            }
+            names.push(RefName { setup: setup.map(str::to_string), name: name.to_lower_camel_case(), text: text.to_string() });
+        }
+        names
     }
 }
 

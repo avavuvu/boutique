@@ -12,7 +12,7 @@ type Resolve<Value> = Value extends readonly (infer Tag extends string)[]
 
 export type Refs<Shape> = { [Key in keyof Shape]: Resolve<NonNullable<Shape[Key]>> };
 
-export type Context<Shape = {}> = Refs<Shape> & { signal: AbortSignal };
+export type SetupContext = { signal: AbortSignal };
 
 export type Use = { event: string; tag: string; target?: "window" | "document" };
 
@@ -34,12 +34,13 @@ type Returned<On> = [keyof On] extends [never] ? void | Lifecycle : Handlers<On>
 
 export type Setup<Tag extends string, Shape = {}, On = {}> = (
     element: ElementOf<Tag>,
-    context: Context<Shape>,
+    refs: Refs<Shape>,
+    context: SetupContext,
 ) => Returned<On> | Promise<Returned<On>>;
 
-type AnySetup = (element: any, context: any) => unknown;
+type AnySetup = (element: any, refs: any, context: any) => unknown;
 
-type Entry = { tags: readonly string[]; many: readonly string[] } & (
+type Entry = { tags: readonly string[]; refs: readonly string[]; many: readonly string[]; handlers: readonly string[] } & (
     | { setup: AnySetup }
     | { load: () => Promise<AnySetup> }
 );
@@ -55,7 +56,9 @@ type Instance = {
     bound: WeakMap<Element, Set<string>>;
 };
 
-type Binding = { key: string; event: string; modifiers: Set<string>; setup?: string; handler: string };
+type Binding = { key: string; text: string; event: string; modifiers: Set<string>; setup?: string; handler?: string };
+
+type Kind = "refs" | "handlers";
 
 const ATTRIBUTE = "bq-setup";
 const REF = "bq-ref";
@@ -141,51 +144,20 @@ function namesOf(element: Element): string[] {
     return (element.getAttribute(ATTRIBUTE) ?? "").split(/\s+/).filter(Boolean);
 }
 
-function refsOf(root: Element, many: readonly string[]): Record<string, Element | Element[]> {
-    const refs: Record<string, Element | Element[]> = {};
-    for (const name of many) refs[name] = [];
-
-    for (const element of root.querySelectorAll(`[${REF}]`)) {
-        if (element.parentElement?.closest(`[${ATTRIBUTE}]`) !== root) continue;
-
-        const name = camel(element.getAttribute(REF) ?? "");
-        const existing = refs[name];
-        if (Array.isArray(existing)) existing.push(element);
-        else if (existing === undefined) refs[name] = element;
-    }
-
-    return refs;
+function split(token: string): { setup?: string; name: string } {
+    const dot = token.indexOf(".");
+    return dot < 0 ? { name: camel(token) } : { setup: token.slice(0, dot), name: camel(token.slice(dot + 1)) };
 }
 
 function parseBindings(attribute: string, value: string): Binding[] {
     const [event = "", ...rest] = attribute.slice(ON.length).split("|");
     const modifiers = new Set(rest);
-    return value
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((token) => {
-            const key = `${attribute}=${token}`;
-            const dot = token.indexOf(".");
-            return dot < 0
-                ? { key, event, modifiers, handler: camel(token) }
-                : { key, event, modifiers, setup: token.slice(0, dot), handler: camel(token.slice(dot + 1)) };
-        });
-}
-
-function ownerOf(element: Element, setup: string | undefined): [Element, string] | undefined {
-    let owner = element.closest(`[${ATTRIBUTE}]`);
-    if (setup === undefined) {
-        if (!owner) return undefined;
-        const names = namesOf(owner);
-        if (names.length === 1) return [owner, names[0]];
-        console.warn(`[bq] this bq-on is inside more than one setup (${names.join(", ")}); write the setup name, for example "${names[0]}.handler"`, element);
-        return undefined;
-    }
-    while (owner) {
-        if (namesOf(owner).includes(setup)) return [owner, setup];
-        owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`) ?? null;
-    }
-    return undefined;
+    const tokens = value.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return [{ key: attribute, text: attribute, event, modifiers }];
+    return tokens.map((token) => {
+        const { setup, name } = split(token);
+        return { key: `${attribute}=${token}`, text: `${attribute}="${token}"`, event, modifiers, setup, handler: name };
+    });
 }
 
 function isMac(): boolean {
@@ -225,6 +197,62 @@ export function defineSetups(registry: Registry): void {
     defined = true;
 
     const loads = new Map<string, Promise<AnySetup>>();
+    const warned = new WeakMap<Element, Set<string>>();
+
+    const warnOnce = (element: Element, key: string, message: string): void => {
+        let keys = warned.get(element);
+        if (!keys) {
+            keys = new Set();
+            warned.set(element, keys);
+        }
+        if (keys.has(key)) return;
+        keys.add(key);
+        console.warn(message, element);
+    };
+
+    const ownerOf = (
+        element: Element,
+        start: Element | null,
+        kind: Kind,
+        setup: string | undefined,
+        name: string,
+        text: string,
+    ): [Element, string] | undefined => {
+        for (let owner = start?.closest(`[${ATTRIBUTE}]`) ?? null; owner; owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`) ?? null) {
+            const names = namesOf(owner);
+            if (setup !== undefined) {
+                if (names.includes(setup)) return [owner, setup];
+                continue;
+            }
+            const users = names.filter((candidate) => registry[candidate]?.[kind].includes(name));
+            if (users.length === 1) return [owner, users[0]];
+            if (users.length > 1) {
+                warnOnce(element, text, `[bq] ${text} is used by more than one setup (${users.join(", ")}); write the setup name, for example "${users[0]}.${name}"`);
+                return undefined;
+            }
+        }
+        warnOnce(element, text, setup === undefined ? `[bq] no setup above uses ${text}` : `[bq] ${text} is not inside an element with bq-setup="${setup}"`);
+        return undefined;
+    };
+
+    const refsOf = (root: Element, setup: string, entry: Entry): Record<string, Element | Element[]> => {
+        const refs: Record<string, Element | Element[]> = {};
+        for (const name of entry.many) refs[name] = [];
+
+        for (const element of root.querySelectorAll(`[${REF}]`)) {
+            for (const token of (element.getAttribute(REF) ?? "").split(/\s+/).filter(Boolean)) {
+                const { setup: prefix, name } = split(token);
+                const owner = ownerOf(element, element.parentElement, "refs", prefix, name, `bq-ref="${token}"`);
+                if (owner?.[0] !== root || owner[1] !== setup) continue;
+
+                const existing = refs[name];
+                if (Array.isArray(existing)) existing.push(element);
+                else if (existing === undefined) refs[name] = element;
+            }
+        }
+
+        return refs;
+    };
 
     const attach = (instance: Instance, element: Element, binding: Binding): void => {
         let bound = instance.bound.get(element);
@@ -235,10 +263,14 @@ export function defineSetups(registry: Registry): void {
         }
         bound.add(binding.key);
 
-        const handler = binding.handler === "disconnect" ? undefined : instance.handlers?.[binding.handler];
-        if (typeof handler !== "function") {
-            console.warn(`[bq] setup "${instance.name}" has no handler "${binding.handler}"`, element);
-            return;
+        let handler: Function | undefined;
+        if (binding.handler !== undefined) {
+            const found = binding.handler === "disconnect" ? undefined : instance.handlers?.[binding.handler];
+            if (typeof found !== "function") {
+                console.warn(`[bq] setup "${instance.name}" has no handler "${binding.handler}"`, element);
+                return;
+            }
+            handler = found;
         }
 
         const { modifiers } = binding;
@@ -250,6 +282,7 @@ export function defineSetups(registry: Registry): void {
             if (modifiers.has("prevent")) event.preventDefault();
             if (modifiers.has("stop")) event.stopPropagation();
             if (modifiers.has("once")) target.removeEventListener(binding.event, listener, { capture });
+            if (!handler) return;
             try {
                 const result: unknown = handler.call(instance.handlers, event, element);
                 if (result instanceof Promise) {
@@ -268,7 +301,11 @@ export function defineSetups(registry: Registry): void {
             for (const { name: attribute, value } of [...element.attributes]) {
                 if (!attribute.startsWith(ON)) continue;
                 for (const binding of parseBindings(attribute, value)) {
-                    const owner = ownerOf(element, binding.setup);
+                    const nearest = element.closest(`[${ATTRIBUTE}]`);
+                    const owner =
+                        binding.handler === undefined
+                            ? nearest && ([nearest, namesOf(nearest)[0]] as [Element, string])
+                            : ownerOf(element, element, "handlers", binding.setup, binding.handler, binding.text);
                     if (!owner) continue;
                     const instance = running.get(owner[0])?.get(owner[1]);
                     if (instance?.ready) attach(instance, element, binding);
@@ -311,7 +348,7 @@ export function defineSetups(registry: Registry): void {
         };
 
         try {
-            const result = setup(element, { ...refsOf(element, entry.many), signal });
+            const result = setup(element, refsOf(element, instance.name, entry), { signal });
             if (result instanceof Promise) result.then(ready, failed);
             else ready(result);
         } catch (error) {
