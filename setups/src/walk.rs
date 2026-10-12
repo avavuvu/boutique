@@ -186,7 +186,7 @@ pub struct Walker<'a> {
     pub warnings: Vec<String>,
     pub reached: HashSet<usize>,
     pub claims: Vec<Claim>,
-    followed: HashSet<usize>,
+    pub followed: HashSet<usize>,
     orphans: Vec<(Option<usize>, String)>,
     stack: Vec<usize>,
 }

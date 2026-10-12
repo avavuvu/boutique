@@ -108,6 +108,20 @@ fn children_belong_to_the_code_that_wrote_them() {
 }
 
 #[test]
+fn a_followed_helper_is_not_also_walked_alone() {
+    let (types, _, warnings) = ok(&[
+        (0, "menu.rs", MENU),
+        (0, "a.rs", r##"
+            setup!(Toolbar);
+            fn view() -> Markup { html! { div bq-setup=(Toolbar) { Menu { (option()) } } } }
+            fn option() -> Markup { html! { b bq-ref="option" bq-on:click="pick" {} } }
+        "##),
+    ]);
+    assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { option: "b" }, { pick: { event: "click"; tag: "b" } }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
 fn markup_in_component_arguments_belongs_to_the_caller() {
     let (types, _, warnings) = ok(&[
         (0, "menu.rs", MENU),

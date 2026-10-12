@@ -6,7 +6,7 @@ mod walk;
 mod tests;
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -140,19 +140,10 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
         visitor.visit_file(&parsed);
     }
 
+    let mut probe = Walker::new(&index);
+    walk(&mut probe, &index, &HashSet::new());
     let mut walker = Walker::new(&index);
-    for (block, html) in index.blocks.iter().enumerate() {
-        if !html.function.is_some_and(|function| index.functions[function].component) {
-            walker.block(block);
-        }
-    }
-    for (function, item) in index.functions.iter().enumerate() {
-        if item.component && !walker.reached.contains(&function) {
-            for &block in &item.blocks {
-                walker.block(block);
-            }
-        }
-    }
+    walk(&mut walker, &index, &probe.followed);
     let (usages, claims, mut walk_errors, mut warnings) = walker.finish();
     errors.append(&mut walk_errors);
 
@@ -182,6 +173,22 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
     }
 
     Ok((types(runtime, &by_name, &merged), registry(runtime, &by_name, &merged), warnings))
+}
+
+fn walk(walker: &mut Walker, index: &Index, followed: &HashSet<usize>) {
+    for (block, html) in index.blocks.iter().enumerate() {
+        let skip = html.function.is_some_and(|function| index.functions[function].component || followed.contains(&function));
+        if !skip {
+            walker.block(block);
+        }
+    }
+    for (function, item) in index.functions.iter().enumerate() {
+        if item.component && !walker.reached.contains(&function) {
+            for &block in &item.blocks {
+                walker.block(block);
+            }
+        }
+    }
 }
 
 fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
@@ -389,11 +396,12 @@ fn collisions(usages: &[Usage], claims: &[Claim], merged: &BTreeMap<String, Merg
             Kind::Handler => merged.handlers.contains_key(name),
         })
     };
+    let mut seen = BTreeSet::new();
     for claim in claims {
         let owner = &usages[claim.owner].name;
         for &other in &claim.between {
             let other = &usages[other].name;
-            if uses(other, claim.kind, &claim.name) {
+            if uses(other, claim.kind, &claim.name) && seen.insert((&claim.location, &claim.text, other)) {
                 errors.push(format!(
                     "{}: {} is written for {owner}, but {other} also uses the name `{}` and is nearer, so {other} would get it. \
                      Rename one of them, or write the setup name, for example \"{}.{}\"",
