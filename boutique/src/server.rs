@@ -10,7 +10,12 @@ use std::convert::Infallible;
 use tower::{Service, ServiceBuilder};
 use tower_http::{services::{ServeDir, ServeFile}, set_header::SetResponseHeaderLayer};
 
-use crate::{assets, middleware::clear_legacy_cookies, state::AuthState, store::AuthUser};
+use crate::{
+    assets,
+    middleware::{clear_legacy_cookies, cross_origin_protection},
+    state::AuthState,
+    store::AuthUser,
+};
 
 pub struct Server<U: AuthUser> {
     auth: AuthState<U>,
@@ -75,7 +80,8 @@ impl<U: AuthUser> Server<U> {
 
         let router = router
             .fallback_service(fallback)
-            .layer(middleware::from_fn_with_state(self.auth, clear_legacy_cookies::<U>));
+            .layer(middleware::from_fn_with_state(self.auth, clear_legacy_cookies::<U>))
+            .layer(middleware::from_fn(cross_origin_protection));
 
         if self.debug {
             router
