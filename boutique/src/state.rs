@@ -12,10 +12,6 @@ impl<U: AuthUser> AuthState<U> {
         Self { store, secret: secret.into(), config: AuthConfig::default() }
     }
 
-    pub fn with_config(store: U::Store, secret: impl Into<String>, config: AuthConfig) -> Self {
-        Self::new(store, secret).config(config)
-    }
-
     pub fn config(mut self, config: AuthConfig) -> Self {
         self.config = config;
         self

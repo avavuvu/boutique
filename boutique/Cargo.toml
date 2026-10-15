@@ -14,7 +14,7 @@ sea-orm = ["dep:sea-orm"]
 [dependencies]
 bq_components = { path = "../components", default-features = false }
 axum = { version = "0.8", features = ["multipart"] }
-tokio = { version = "1", features = ["net"] }
+tokio = { version = "1", features = ["net", "rt", "time"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "set-header", "trace"] }
 tracing = "0.1"

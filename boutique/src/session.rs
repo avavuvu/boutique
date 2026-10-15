@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::response::{IntoResponseParts, ResponseParts};
 pub use axum_extra::extract::cookie::CookieJar;
@@ -50,8 +52,6 @@ pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_
 
 pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Session, StoreError> {
     let now = Utc::now();
-    state.store.delete_expired_sessions(now).await.map_err(StoreError::from_debug)?;
-
     let token = new_token();
     let ttl = state.config.session_ttl_hours;
     let session = NewSession {
@@ -76,6 +76,19 @@ pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Sessio
 
 pub async fn revoke_all<U: AuthUser>(state: &AuthState<U>, user_id: &str) -> Result<(), StoreError> {
     state.store.delete_user_sessions(user_id).await.map_err(StoreError::from_debug)
+}
+
+pub fn spawn_cleanup<U: AuthUser>(state: AuthState<U>, interval: Duration) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+            if let Err(error) = state.store.delete_expired_sessions(Utc::now()).await {
+                tracing::warn!(?error, "failed to delete expired sessions");
+            }
+        }
+    })
 }
 
 fn new_token() -> String {

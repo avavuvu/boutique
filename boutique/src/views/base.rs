@@ -5,7 +5,7 @@ use crate::views::head::{Metadata, Head};
 pub fn base(context: &Head, content: Markup) -> Markup {
     html! {
         (DOCTYPE)
-        html lang="en" class=[context.class.as_deref()] data-theme=[context.theme.as_deref()] {
+        html lang=(context.lang) class=[context.class.as_deref()] data-theme=[context.theme.as_deref()] {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content=(context.viewport);
@@ -20,7 +20,7 @@ pub fn base(context: &Head, content: Markup) -> Markup {
                 }
                 title { (context.title) }
                 @for (href, mime) in &context.preloads {
-                    link rel="preload" as="font" type=(mime) href=(href) crossorigin;
+                    link rel="preload" as="font" type=[mime] href=(href) crossorigin;
                 }
                 @for href in &context.stylesheets {
                     link rel="stylesheet" href=(href);

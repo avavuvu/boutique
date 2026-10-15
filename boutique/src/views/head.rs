@@ -3,11 +3,12 @@ use crate::assets;
 pub struct Head {
     pub title: String,
     pub scripts: Vec<String>,
-    pub preloads: Vec<(String, &'static str)>,
+    pub preloads: Vec<(String, Option<&'static str>)>,
     pub stylesheets: Vec<String>,
     pub favicon: Option<String>,
     pub metadata: Option<Metadata>,
     pub class: Option<String>,
+    pub lang: String,
     pub theme: Option<String>,
     pub viewport: String,
     pub manifest: Option<String>,
@@ -24,6 +25,7 @@ impl Head {
             favicon: None,
             metadata: None,
             class: None,
+            lang: "en".into(),
             theme: None,
             viewport: "width=device-width, initial-scale=1.0".into(),
             manifest: None,
@@ -47,7 +49,9 @@ impl Head {
     }
 
     pub fn preload_font(mut self, href: impl Into<String>) -> Self {
-        self.preloads.push((href.into(), "font/woff2"));
+        let href = href.into();
+        let mime = font_type(&href);
+        self.preloads.push((href, mime));
         self
     }
 
@@ -94,8 +98,13 @@ impl Head {
         self
     }
 
-    pub fn class(mut self, name: String) -> Self {
-        self.class = Some(name);
+    pub fn class(mut self, name: impl Into<String>) -> Self {
+        self.class = Some(name.into());
+        self
+    }
+
+    pub fn lang(mut self, lang: impl Into<String>) -> Self {
+        self.lang = lang.into();
         self
     }
 
@@ -103,6 +112,18 @@ impl Head {
     pub fn theme(mut self, name: impl Into<String>) -> Self {
         self.theme = Some(name.into());
         self
+    }
+}
+
+fn font_type(href: &str) -> Option<&'static str> {
+    let path = href.split(['?', '#']).next().unwrap_or(href);
+    let (_, extension) = path.rsplit_once('.')?;
+    match extension.to_ascii_lowercase().as_str() {
+        "woff2" => Some("font/woff2"),
+        "woff" => Some("font/woff"),
+        "ttf" => Some("font/ttf"),
+        "otf" => Some("font/otf"),
+        _ => None,
     }
 }
 
@@ -130,9 +151,9 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn website(description: &str) -> Self {
+    pub fn website(description: impl Into<String>) -> Self {
         Self {
-            description: description.to_string(),
+            description: description.into(),
             og_type: OgType::Website,
             image: None,
             author: None,
@@ -141,24 +162,24 @@ impl Metadata {
         }
     }
 
-    pub fn article(description: &str, author: &str, url: &str) -> Self {
+    pub fn article(description: impl Into<String>, author: impl Into<String>, url: impl Into<String>) -> Self {
         Self {
-            description: description.to_string(),
+            description: description.into(),
             og_type: OgType::Article,
-            author: Some(author.to_string()),
-            url: Some(url.to_string()),
+            author: Some(author.into()),
+            url: Some(url.into()),
             image: None,
             modified_time: None,
         }
     }
 
-    pub fn with_image(mut self, url: &str) -> Self {
-        self.image = Some(url.to_string());
+    pub fn with_image(mut self, url: impl Into<String>) -> Self {
+        self.image = Some(url.into());
         self
     }
 
-    pub fn with_modified_time(mut self, time: &str) -> Self {
-        self.modified_time = Some(time.to_string());
+    pub fn with_modified_time(mut self, time: impl Into<String>) -> Self {
+        self.modified_time = Some(time.into());
         self
     }
 }
