@@ -4,7 +4,9 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
-use maud::{Markup, html};
+use maud::Markup;
+
+use crate::html;
 
 pub fn is_htmx(headers: &HeaderMap) -> bool {
     headers.contains_key("hx-request")

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use maud::{Markup, html};
+use maud::Markup;
 
 use super::partial;
+use crate::html;
 
 pub fn error(message: &str) -> Markup {
     html! { p { (message) } }

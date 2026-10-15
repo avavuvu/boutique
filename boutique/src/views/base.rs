@@ -1,6 +1,9 @@
-use maud::{DOCTYPE, Markup, html};
+use maud::{DOCTYPE, Markup};
 
-use crate::views::head::{Metadata, Head};
+use crate::{
+    html,
+    views::head::{Head, Metadata},
+};
 
 pub fn base(context: &Head, content: Markup) -> Markup {
     html! {

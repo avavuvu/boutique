@@ -8,6 +8,7 @@ pub mod htmx;
 pub mod ids;
 pub mod middleware;
 pub mod password;
+pub mod prelude;
 pub mod reset;
 pub mod run;
 pub mod server;

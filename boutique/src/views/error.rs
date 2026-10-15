@@ -1,8 +1,9 @@
 use axum::http::{HeaderMap, header};
-use maud::{Markup, html};
+use maud::Markup;
 
 use crate::{
     error::ErrorReport,
+    html,
     views::{Head, base},
 };
 
