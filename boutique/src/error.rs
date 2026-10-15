@@ -64,7 +64,7 @@ impl IntoResponse for AppError {
             AppError::BadRequest => StatusCode::BAD_REQUEST.into_response(),
             AppError::Status(status) => status.into_response(),
             AppError::Internal(message) => {
-                eprintln!("[error] {message}");
+                tracing::error!("{message}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     fragments::error("Something went wrong. Please try again."),

@@ -48,7 +48,7 @@ pub fn init(route: &str, dir: &str) {
 
     if cfg!(debug_assertions) {
         if read(&config.path).is_none() {
-            eprintln!("[assets] {} not found, run the vite build first", config.path);
+            tracing::warn!("{} not found, run the vite build first", config.path);
         }
     } else {
         let entries = read(&config.path).unwrap_or_else(|| panic!("{} not found, run the vite build before starting", config.path));
@@ -60,7 +60,7 @@ pub fn init(route: &str, dir: &str) {
 
 fn lookup<T>(name: &str, pick: impl Fn(&str, &Entry) -> T) -> Option<T> {
     let Some(config) = CONFIG.get() else {
-        eprintln!("[assets] manifest::init was not called");
+        tracing::warn!("manifest::init was not called");
         return None;
     };
 
@@ -70,7 +70,7 @@ fn lookup<T>(name: &str, pick: impl Fn(&str, &Entry) -> T) -> Option<T> {
         config.cache.get().and_then(|entries| entries.get(name).map(|entry| pick(&config.route, entry)))
     };
     if found.is_none() {
-        eprintln!("[assets] no entry named {name:?} in {}", config.path);
+        tracing::warn!("no entry named {name:?} in {}", config.path);
     }
     found
 }

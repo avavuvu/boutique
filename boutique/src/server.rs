@@ -8,7 +8,11 @@ use axum::{
 };
 use std::convert::Infallible;
 use tower::{Service, ServiceBuilder};
-use tower_http::{services::{ServeDir, ServeFile}, set_header::SetResponseHeaderLayer};
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
+    trace::TraceLayer,
+};
 
 use crate::{
     assets,
@@ -83,11 +87,9 @@ impl<U: AuthUser> Server<U> {
             .layer(middleware::from_fn_with_state(self.auth, clear_legacy_cookies::<U>))
             .layer(middleware::from_fn(cross_origin_protection));
 
-        if self.debug {
-            router
-        } else {
-            router.layer(middleware::from_fn(https_redirect))
-        }
+        let router = if self.debug { router } else { router.layer(middleware::from_fn(https_redirect)) };
+
+        router.layer(TraceLayer::new_for_http())
     }
 
     pub async fn serve<F>(self, fallback: F, port: &str)
