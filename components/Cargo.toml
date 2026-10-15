@@ -4,7 +4,22 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+ui = []
+
 [dependencies]
 bon = "3"
 bq_macros = { path = "../macros" }
 maud = { version = "0.27", features = ["axum"] }
+
+[[test]]
+name = "components"
+required-features = ["ui"]
+
+[[test]]
+name = "html_component"
+required-features = ["ui"]
+
+[[test]]
+name = "html_setup"
+required-features = ["ui"]

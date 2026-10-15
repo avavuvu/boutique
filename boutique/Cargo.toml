@@ -5,13 +5,14 @@ edition.workspace = true
 publish.workspace = true
 
 [features]
-
+default = ["ui"]
+ui = ["bq_components/ui"]
 devtools = ["dep:dioxus-devtools"]
 cloudinary = ["dep:reqwest", "dep:sha1", "dep:url"]
 sea-orm = ["dep:sea-orm"]
 
 [dependencies]
-bq_components = { path = "../components" }
+bq_components = { path = "../components", default-features = false }
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["net"] }
 tower = "0.5"

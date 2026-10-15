@@ -1,11 +1,15 @@
 extern crate self as bq_components;
 
 mod attrs;
+#[cfg(feature = "ui")]
 mod button;
+#[cfg(feature = "ui")]
 mod input;
 
 pub use attrs::{AttrValue, Attrs};
+#[cfg(feature = "ui")]
 pub use button::{Button, button};
+#[cfg(feature = "ui")]
 pub use input::{Input, Kind, Textarea, input, textarea};
 
 pub use bq_macros::{attrs, component, html};
