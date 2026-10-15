@@ -30,7 +30,7 @@ pub use uuid;
 pub use validator;
 
 pub use config::AuthConfig;
-pub use error::{AppError, AppResult};
+pub use error::{AppError, AppResult, ErrorReport};
 pub use extractors::AuthenticatedUser;
 pub use run::run;
 pub use server::Server;

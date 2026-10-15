@@ -1,7 +1,9 @@
 use axum::{
-    http::StatusCode,
+    extract::FromRequestParts,
+    http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
+use maud::Markup;
 use validator::ValidationErrors;
 
 use crate::{htmx::fragments, store::StoreError};
@@ -17,6 +19,46 @@ pub enum AppError {
 }
 
 pub type AppResult<T = Response> = Result<T, AppError>;
+
+const INTERNAL_MESSAGE: &str = "Something went wrong. Please try again.";
+
+#[derive(Clone, Debug)]
+pub struct ErrorReport {
+    pub status: StatusCode,
+    pub messages: Vec<(Option<String>, String)>,
+}
+
+impl ErrorReport {
+    pub fn new(status: StatusCode) -> Self {
+        Self { status, messages: Vec::new() }
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for ErrorReport {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        parts.extensions.get::<ErrorReport>().cloned().ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+
+fn validation_fields(errors: &ValidationErrors) -> Vec<(String, String)> {
+    let mut fields: Vec<(String, String)> = errors
+        .field_errors()
+        .into_iter()
+        .filter_map(|(field, errors)| {
+            let message = errors.first()?.message.as_ref().map(|message| message.to_string()).unwrap_or_else(|| format!("Invalid {field}"));
+            Some((field.to_string(), message))
+        })
+        .collect();
+    fields.sort();
+    fields
+}
+
+fn field_fragments(fields: &[(String, String)]) -> Markup {
+    let fields: Vec<(&str, Option<&str>)> = fields.iter().map(|(field, message)| (field.as_str(), Some(message.as_str()))).collect();
+    fragments::field_errors(&fields)
+}
 
 impl AppError {
     pub fn field(field: &'static str, message: impl Into<String>) -> Self {
@@ -59,29 +101,41 @@ impl From<ValidationErrors> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        match self {
-            AppError::NotFound => StatusCode::NOT_FOUND.into_response(),
-            AppError::BadRequest => StatusCode::BAD_REQUEST.into_response(),
-            AppError::Status(status) => status.into_response(),
+        let (status, messages, body) = match self {
+            AppError::NotFound => (StatusCode::NOT_FOUND, Vec::new(), None),
+            AppError::BadRequest => (StatusCode::BAD_REQUEST, Vec::new(), None),
+            AppError::Status(status) => (status, Vec::new(), None),
             AppError::Internal(message) => {
                 tracing::error!("{message}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    fragments::error("Something went wrong. Please try again."),
+                    vec![(None, INTERNAL_MESSAGE.to_string())],
+                    Some(fragments::error(INTERNAL_MESSAGE)),
                 )
-                    .into_response()
             }
             AppError::Validation(errors) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, fragments::from_errors(errors)).into_response()
+                let fields = validation_fields(&errors);
+                let body = field_fragments(&fields);
+                let messages = fields.into_iter().map(|(field, message)| (Some(field), message)).collect();
+                (StatusCode::UNPROCESSABLE_ENTITY, messages, Some(body))
             }
             AppError::Fields(fields) => {
-                let fields: Vec<(&str, Option<&str>)> =
-                    fields.iter().map(|(field, message)| (*field, Some(message.as_str()))).collect();
-                (StatusCode::UNPROCESSABLE_ENTITY, fragments::field_errors(&fields)).into_response()
+                let fields: Vec<(String, String)> = fields.into_iter().map(|(field, message)| (field.to_string(), message)).collect();
+                let body = field_fragments(&fields);
+                let messages = fields.into_iter().map(|(field, message)| (Some(field), message)).collect();
+                (StatusCode::UNPROCESSABLE_ENTITY, messages, Some(body))
             }
             AppError::Message(message) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, fragments::error(&message)).into_response()
+                let body = fragments::error(&message);
+                (StatusCode::UNPROCESSABLE_ENTITY, vec![(None, message)], Some(body))
             }
-        }
+        };
+
+        let mut response = match body {
+            Some(body) => (status, body).into_response(),
+            None => status.into_response(),
+        };
+        response.extensions_mut().insert(ErrorReport { status, messages });
+        response
     }
 }

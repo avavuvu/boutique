@@ -2,6 +2,7 @@ use axum::{
     Router,
     body::Body,
     extract::Request,
+    handler::Handler,
     http::{HeaderValue, header},
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
@@ -14,12 +15,18 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{assets, middleware::cross_origin_protection};
+use crate::{
+    assets,
+    middleware::{cross_origin_protection, error_page},
+};
+
+type Wrap = Box<dyn FnOnce(Router) -> Router + Send + Sync>;
 
 pub struct Server {
     assets: (String, String),
     static_dirs: Vec<(String, String)>,
     files: Vec<(String, String)>,
+    error_page: Option<Wrap>,
     debug: bool,
 }
 
@@ -29,6 +36,7 @@ impl Default for Server {
             assets: (assets::BUILD_ROUTE.into(), assets::BUILD_DIR.into()),
             static_dirs: Vec::new(),
             files: Vec::new(),
+            error_page: None,
             debug: false,
         }
     }
@@ -51,6 +59,28 @@ impl Server {
 
     pub fn file(mut self, route: impl Into<String>, path: impl Into<String>) -> Self {
         self.files.push((route.into(), path.into()));
+        self
+    }
+
+    pub fn error_page<H, T>(self, render: H) -> Self
+    where
+        H: Handler<T, ()>,
+        T: 'static,
+    {
+        self.error_page_with_state((), render)
+    }
+
+    pub fn error_page_with_state<H, T, S>(mut self, state: S, render: H) -> Self
+    where
+        H: Handler<T, S>,
+        T: 'static,
+        S: Clone + Send + Sync + 'static,
+    {
+        self.error_page = Some(Box::new(move |router: Router| {
+            router.layer(middleware::from_fn(move |request: Request, next: Next| {
+                error_page(render.clone(), state.clone(), request, next)
+            }))
+        }));
         self
     }
 
@@ -90,9 +120,11 @@ impl Server {
             };
         }
 
-        let router = router
-            .fallback_service(fallback)
-            .layer(middleware::from_fn(cross_origin_protection));
+        let router = router.fallback_service(fallback).layer(middleware::from_fn(cross_origin_protection));
+        let router = match self.error_page {
+            Some(wrap) => wrap(router),
+            None => router,
+        };
 
         let router = if self.debug { router } else { router.layer(middleware::from_fn(https_redirect)) };
 
