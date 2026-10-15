@@ -1,7 +1,5 @@
 use chrono::Utc;
 use hmac::{Hmac, Mac};
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
 use crate::{
@@ -25,18 +23,27 @@ impl From<StoreError> for ResetError {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct Claims {
-    sub: String,
-    typ: String,
-    fingerprint: String,
-    exp: usize,
+fn mac(secret: &[u8], user_id: &str, expires: i64, password_hash: &str) -> Hmac<Sha256> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("hmac accepts keys of any length");
+    mac.update(TOKEN_TYPE.as_bytes());
+    mac.update(b"\0");
+    mac.update(user_id.as_bytes());
+    mac.update(b"\0");
+    mac.update(expires.to_string().as_bytes());
+    mac.update(b"\0");
+    mac.update(password_hash.as_bytes());
+    mac
 }
 
-fn fingerprint(secret: &[u8], password_hash: &str) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("hmac accepts keys of any length");
-    mac.update(password_hash.as_bytes());
-    format!("{:x}", mac.finalize().into_bytes())
+fn encode_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn decode_hex(hex: &str) -> Option<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok()).collect()
 }
 
 /// returns `None` for an unknown email. callers must show the same message
@@ -46,39 +53,41 @@ pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<O
         return Ok(None);
     };
 
-    let token = token_for(state, &user).map_err(|_| ResetError::InvalidToken)?;
+    let token = token_for(state, &user);
     Ok(Some((user, token)))
 }
 
-pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<String, jsonwebtoken::errors::Error> {
-    let claims = Claims {
-        sub: user.id().to_string(),
-        typ: TOKEN_TYPE.to_string(),
-        fingerprint: fingerprint(state.secret(), user.password_hash()),
-        exp: (Utc::now() + chrono::Duration::hours(state.config.reset_ttl_hours)).timestamp() as usize,
-    };
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(state.secret()))
+pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> String {
+    let expires = (Utc::now() + chrono::Duration::hours(state.config.reset_ttl_hours)).timestamp();
+    let signature = mac(state.secret(), user.id(), expires, user.password_hash()).finalize().into_bytes();
+    format!("{}.{expires}.{}", encode_hex(user.id().as_bytes()), encode_hex(&signature))
 }
 
 pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Result<U, ResetError> {
-    let claims = decode::<Claims>(token, &DecodingKey::from_secret(state.secret()), &Validation::default())
-        .map_err(|_| ResetError::InvalidToken)?
-        .claims;
+    let mut parts = token.split('.');
+    let (Some(user_id), Some(expires), Some(signature), None) = (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(ResetError::InvalidToken);
+    };
 
-    if claims.typ != TOKEN_TYPE {
+    let user_id = decode_hex(user_id).and_then(|bytes| String::from_utf8(bytes).ok()).ok_or(ResetError::InvalidToken)?;
+    let expires: i64 = expires.parse().map_err(|_| ResetError::InvalidToken)?;
+    let signature = decode_hex(signature).ok_or(ResetError::InvalidToken)?;
+
+    if expires <= Utc::now().timestamp() {
         return Err(ResetError::InvalidToken);
     }
 
     let user = state
         .store
-        .find_user_by_id(&claims.sub)
+        .find_user_by_id(&user_id)
         .await
         .map_err(StoreError::from_debug)?
         .ok_or(ResetError::InvalidToken)?;
 
-    if fingerprint(state.secret(), user.password_hash()) != claims.fingerprint {
-        return Err(ResetError::InvalidToken);
-    }
+    mac(state.secret(), user.id(), expires, user.password_hash())
+        .verify_slice(&signature)
+        .map_err(|_| ResetError::InvalidToken)?;
 
     Ok(user)
 }
@@ -88,4 +97,141 @@ pub async fn complete<U: AuthUser>(state: &AuthState<U>, token: &str, new_passwo
     let hash = password::hash(new_password).map_err(ResetError::Hash)?;
 
     Ok(state.store.reset_password(user, hash).await.map_err(StoreError::from_debug)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        pin::pin,
+        sync::{Arc, Mutex},
+        task::{Context, Poll, Waker},
+    };
+
+    use chrono::{DateTime, Utc};
+
+    use super::*;
+    use crate::{config::AuthConfig, store::NewSession};
+
+    #[derive(Clone)]
+    struct User {
+        id: String,
+        email: String,
+        password_hash: String,
+    }
+
+    #[derive(Clone)]
+    struct Store(Arc<Mutex<Vec<User>>>);
+
+    impl AuthUser for User {
+        type Store = Store;
+
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn email(&self) -> &str {
+            &self.email
+        }
+
+        fn password_hash(&self) -> &str {
+            &self.password_hash
+        }
+    }
+
+    impl AuthStore<User> for Store {
+        type Error = ();
+
+        async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, ()> {
+            Ok(self.0.lock().unwrap().iter().find(|user| user.email == email).cloned())
+        }
+
+        async fn find_user_by_id(&self, id: &str) -> Result<Option<User>, ()> {
+            Ok(self.0.lock().unwrap().iter().find(|user| user.id == id).cloned())
+        }
+
+        async fn create_session(&self, _: NewSession) -> Result<(), ()> {
+            Ok(())
+        }
+
+        async fn find_session_user(&self, _: &str, _: DateTime<Utc>) -> Result<Option<User>, ()> {
+            Ok(None)
+        }
+
+        async fn delete_session(&self, _: &str) -> Result<(), ()> {
+            Ok(())
+        }
+
+        async fn delete_user_sessions(&self, _: &str) -> Result<(), ()> {
+            Ok(())
+        }
+
+        async fn delete_expired_sessions(&self, _: DateTime<Utc>) -> Result<(), ()> {
+            Ok(())
+        }
+
+        async fn reset_password(&self, mut user: User, password_hash: String) -> Result<User, ()> {
+            user.password_hash = password_hash;
+            Ok(user)
+        }
+    }
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        match pin!(future).poll(&mut Context::from_waker(Waker::noop())) {
+            Poll::Ready(output) => output,
+            Poll::Pending => panic!("test store futures are always ready"),
+        }
+    }
+
+    fn user(id: &str) -> User {
+        User { id: id.into(), email: format!("{id}@example.com"), password_hash: "hash".into() }
+    }
+
+    fn state() -> AuthState<User> {
+        AuthState::new(Store(Arc::new(Mutex::new(vec![user("alice"), user("bob")]))), "secret")
+    }
+
+    fn verify(state: &AuthState<User>, token: &str) -> Result<User, ResetError> {
+        block_on(verify_token(state, token))
+    }
+
+    #[test]
+    fn valid_token() {
+        let state = state();
+        let token = token_for(&state, &user("alice"));
+        assert_eq!(verify(&state, &token).unwrap().id, "alice");
+    }
+
+    #[test]
+    fn expired_token() {
+        let state = state().config(AuthConfig::default().reset_ttl_hours(-1));
+        let token = token_for(&state, &user("alice"));
+        assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
+    }
+
+    #[test]
+    fn tampered_user_id() {
+        let state = state();
+        let token = token_for(&state, &user("alice"));
+        let (_, rest) = token.split_once('.').unwrap();
+        let token = format!("{}.{rest}", encode_hex(b"bob"));
+        assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
+    }
+
+    #[test]
+    fn tampered_mac() {
+        let state = state();
+        let mut token = token_for(&state, &user("alice"));
+        let last = if token.ends_with('0') { '1' } else { '0' };
+        token.pop();
+        token.push(last);
+        assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
+    }
+
+    #[test]
+    fn token_issued_before_password_change() {
+        let state = state();
+        let token = token_for(&state, &user("alice"));
+        state.store.0.lock().unwrap()[0].password_hash = "changed".into();
+        assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
+    }
 }
