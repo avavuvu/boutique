@@ -1,3 +1,6 @@
+#[cfg(feature = "sea-orm")]
+pub mod sea_orm;
+
 use std::{fmt, future::Future};
 
 use chrono::{DateTime, Utc};
