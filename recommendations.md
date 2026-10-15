@@ -24,7 +24,7 @@ Both apps have a gitignored `.cargo/config.toml` that patches the boutique git d
 | `bq_html` | `html/` | Fork of `maud_macros` 0.27 adding components, `(..attrs)`, `@element`, `bq-*` attribute handling |
 | `bq_setups` | `setups/` | Build-time generator: walks Rust sources and writes `bindings/setups.ts` and `bindings/registry.ts` in the app |
 
-CSS lives in `style/` at the workspace root (not inside any crate).
+CSS lives in `style/` at the workspace root (not inside any crate). It moves to `components/src/style/` (see 9.4).
 
 Generated code from `bq_html` and `bq_macros` uses absolute paths like `::bq_components::Attrs` and `::bq_components::maud::…`. This is why apps currently need `bq_components` as a direct dependency (relevant to 1.1).
 
@@ -236,7 +236,7 @@ Both apps built their own `icon` and a `<details>` dropdown or menu. Showroom ha
 **Problem:** boutique keeps component CSS in `style/components/`, while apps colocate `index.css` next to `mod.rs`. Showroom copied `button.css` and `input.css` into `showroom-web/src/components/{button,input}/index.css` to fix them.
 
 **Change:**
-- Move `style/components/button.css` and `input.css` to `components/src/button/index.css` and `components/src/input/index.css`. `style/components/base.css` moves with the rest of `style/` per 9.4.
+- Move `style/components/button.css` and `input.css` to `components/src/button/index.css` and `components/src/input/index.css`. `style/components/base.css` (`.error`, `.sr-only`, busy states) is core and moves to `components/src/style/base.css` per 9.4.
 - Upstream showroom's fixes: `color: var(--color-on-primary)` for `.primary` and `.secondary` hover; styles for `.hint` and `.suffix` (and `.prefix`), which `Input` renders but boutique does not style. Add `--color-on-primary` to `roles.css`.
 - Remove the duplicated `padding` in the password button rule in `input.css`.
 
@@ -392,12 +392,14 @@ Outstanding JWT reset links stop working on deploy; they expire within `reset_tt
 
 ## 4. CSS
 
-All files are in `style/` until 9.4 moves them.
+Core CSS lives in `components/src/style/`; component CSS in `components/src/<name>/index.css`.
 
 ### 4.1 Cascade layers
 **Status:** Decided
 
-Declare `@layer bq.reset, bq.tokens, bq.base, bq.components, app;` and put every boutique rule in its layer, so app CSS wins without copying files or raising specificity. Document that app CSS goes in `app` (or unlayered).
+- `components/src/style/index.css` starts with the order statement `@layer bq.reset, bq.tokens, bq.base, bq.components, app;` and then `@import`s the core files.
+- Each file wraps its own rules in its layer (`@layer bq.reset { … }`, `@layer bq.components { … }`), rather than relying on `@import … layer(…)`, so layering survives any bundler.
+- Document in the readme that app CSS goes in `@layer app` or stays unlayered; either beats every boutique layer.
 
 ### 4.2 Breakpoints
 **Status:** Later (depends on 7.2)
@@ -636,9 +638,9 @@ Only section 1 is affected; sections 2–8 are not.
 - Serving prebuilt JS from Rust (like `htmx.js` today, Livewire, Dioxus): app setups import the runtime's types and CSS needs bundling, so this does not fit.
 
 **Implementation:**
-1. Move all boutique CSS into a crate: `style/reset.css`, `tokens.css`, `roles.css` and `components/base.css` into `components/style/`; component CSS per 2.4.
+1. Move all boutique CSS into the crate under `components/src/`: `style/reset.css`, `tokens.css`, `roles.css` and `components/base.css` go to `components/src/style/`; component CSS per 2.4. Keeping everything under `components/src/` means relative `@import`s (e.g. `style/components.css` importing `../button/index.css`) resolve the same way in the source tree and in the written `bindings/boutique/`.
 2. Expose boutique's files from `bq_components` with `include_str!`, as a static list of `(relative path, contents)`. This covers `components/src/setups.ts`, every component `index.ts` and `index.css`, the `style/` files, and the component Rust sources that `bq_setups` analyses.
-3. `bq_setups` depends on `bq_components` for that list. `Generator::boutique()` analyses the embedded Rust sources instead of reading `../components/src`, and writes the TS and CSS to `<out>/boutique/`, preserving the `components/src` layout so relative imports (`input/index.ts` imports `../setups`) still work. Use `write_if_changed`.
+3. `bq_setups` depends on `bq_components` for that list. `Generator::boutique()` analyses the embedded Rust sources instead of reading `../components/src`, and writes the TS and CSS to `<out>/boutique/`, mirroring `components/src` (so `components/src/style/index.css` becomes `<out>/boutique/style/index.css` and `input/index.ts` still imports `../setups`). Use `write_if_changed`.
 4. Generated imports change from `@bq/components/src/…` to relative paths: `registry.ts` and `setups.ts` import `./boutique/setups`, and boutique component setups `./boutique/input/index`. Remove the `runtime` field default of `"@bq/components/src/setups"`.
 5. Provide two CSS entries: `bindings/boutique/style/index.css` (core layers, in order per 4.1) and `bindings/boutique/style/components.css` (UI kit, per 2.5).
 
