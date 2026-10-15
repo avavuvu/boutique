@@ -1,0 +1,82 @@
+@layer bq.base {
+    .flow > * + * {
+        margin-block-start: var(--flow-space, 1em);
+    }
+
+    .article-layout {
+        --article-width: 70ch;
+        --article-gutter: 1em;
+
+        display: grid;
+        grid-template-columns:
+            [full-start] minmax(var(--article-gutter), 1fr)
+            [content-start] min(var(--article-width), 100% - 2 * var(--article-gutter))
+            [content-end] minmax(var(--article-gutter), 1fr) [full-end];
+        align-content: start;
+        min-block-size: 80vh;
+        padding-block-start: clamp(2em, 8vw, 4em);
+
+        & > * {
+            grid-column: content;
+        }
+
+        & > [data-width="full"] {
+            grid-column: full;
+        }
+    }
+
+    .stack {
+        display: flex;
+        flex-direction: column;
+        gap: var(--stack-space, var(--space-4));
+    }
+
+    .cluster {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: var(--cluster-justify, flex-start);
+        gap: var(--cluster-space, var(--space-3));
+    }
+
+    .center {
+        box-sizing: content-box;
+        max-inline-size: var(--center-width, 60ch);
+        margin-inline: auto;
+        padding-inline: var(--center-gutter, var(--space-4));
+    }
+
+    .sidebar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sidebar-space, var(--space-4));
+
+        & > :first-child {
+            flex-basis: var(--sidebar-width, 20rem);
+            flex-grow: 1;
+        }
+
+        & > :last-child {
+            flex-basis: 0;
+            flex-grow: 999;
+            min-inline-size: var(--sidebar-content-min, 50%);
+        }
+    }
+
+    .switcher {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--switcher-space, var(--space-4));
+
+        & > * {
+            flex-grow: 1;
+            flex-basis: calc((var(--switcher-threshold, 30rem) - 100%) * 999);
+        }
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
+        gap: var(--grid-space, var(--space-4));
+    }
+}
