@@ -16,16 +16,32 @@ use tower_http::{
 
 use crate::{assets, middleware::cross_origin_protection};
 
-#[derive(Default)]
 pub struct Server {
+    assets: (String, String),
     static_dirs: Vec<(String, String)>,
     files: Vec<(String, String)>,
     debug: bool,
 }
 
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            assets: (assets::BUILD_ROUTE.into(), assets::BUILD_DIR.into()),
+            static_dirs: Vec::new(),
+            files: Vec::new(),
+            debug: false,
+        }
+    }
+}
+
 impl Server {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn assets(mut self, route: impl Into<String>, dir: impl Into<String>) -> Self {
+        self.assets = (route.into(), dir.into());
+        self
     }
 
     pub fn static_dir(mut self, route: impl Into<String>, dir: impl Into<String>) -> Self {
@@ -49,13 +65,15 @@ impl Server {
         F: Service<Request, Response = Response, Error = Infallible> + Clone + Send + Sync + 'static,
         F::Future: Send + 'static,
     {
+        assets::manifest::init(&self.assets.0, &self.assets.1);
+
         let mut router = Router::new().merge(assets::router());
 
         for (route, path) in &self.files {
             router = router.route_service(route, ServeFile::new(path));
         }
 
-        for (route, dir) in &self.static_dirs {
+        for (route, dir) in self.static_dirs.iter().chain([&self.assets]) {
             let service = ServeDir::new(dir);
             router = if !self.debug {
                 router.nest_service(route, service)

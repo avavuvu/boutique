@@ -8,6 +8,8 @@ use axum::{
 };
 
 pub const HTMX_PATH: &str = "/boutique/htmx.js";
+pub const BUILD_ROUTE: &str = "/build";
+pub const BUILD_DIR: &str = "public/build";
 
 
 fn script(body: &'static str) -> impl IntoResponse {

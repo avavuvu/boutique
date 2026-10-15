@@ -60,6 +60,9 @@ pub fn init(route: &str, dir: &str) {
 
 fn lookup<T>(name: &str, pick: impl Fn(&str, &Entry) -> T) -> Option<T> {
     let Some(config) = CONFIG.get() else {
+        if cfg!(debug_assertions) {
+            panic!("asset {name:?} requested before the manifest was initialised, build the router with Server first");
+        }
         tracing::warn!("manifest::init was not called");
         return None;
     };
