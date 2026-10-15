@@ -2,6 +2,9 @@ mod index;
 mod on;
 mod walk;
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
