@@ -373,4 +373,8 @@
   [hidden]:where(:not([hidden='until-found'])) {
     display: none !important;
   }
+
+  :where(dialog, [popover]) {
+    margin: auto;
+  }
 }

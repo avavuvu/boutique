@@ -74,9 +74,9 @@
         }
     }
 
-    .grid {
+    .auto-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
-        gap: var(--grid-space, var(--space-4));
+        grid-template-columns: repeat(auto-fit, minmax(min(var(--auto-grid-min, 16rem), 100%), 1fr));
+        gap: var(--auto-grid-space, var(--space-4));
     }
 }

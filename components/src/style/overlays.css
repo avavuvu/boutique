@@ -1,7 +1,6 @@
 @layer bq.components {
     dialog,
     [popover] {
-        margin: auto;
         border: var(--border-width) solid var(--color-border);
         border-radius: var(--radius);
         background-color: var(--color-surface);

@@ -422,7 +422,7 @@ Core CSS lives in `components/src/style/`; component CSS in `components/src/<nam
 ### 4.5 Layout primitives
 **Status:** Decided
 
-`.flow` and `.article-layout` (from `showroom-web/resources/css/app.css`), plus `.stack`, `.cluster`, `.center`, `.sidebar`, `.switcher` and an auto-fit `.grid`.
+`.flow` and `.article-layout` (from `showroom-web/resources/css/app.css`), plus `.stack`, `.cluster`, `.center`, `.sidebar`, `.switcher` and an auto-fit `.auto-grid`.
 
 ### 4.6 Component styles
 **Status:** Decided
