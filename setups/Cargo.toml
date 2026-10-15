@@ -3,10 +3,12 @@ name = "bq_setups"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+repository.workspace = true
+description = "Build-time generator for boutique's TypeScript setup bindings and embedded JS and CSS"
 
 [dependencies]
-bq_components = { path = "../components" }
-bq_html = { path = "../html" }
+bq_components = { version = "0.2.0", path = "../components" }
+bq_html = { version = "0.2.0", path = "../html" }
 heck = "0.5"
 proc-macro2 = { version = "1", features = ["span-locations"] }
 syn = { version = "2", features = ["full", "visit", "parsing"] }

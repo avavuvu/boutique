@@ -3,13 +3,15 @@ name = "bq_components"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+repository.workspace = true
+description = "Components, attributes and the setups runtime for boutique"
 
 [features]
 ui = []
 
 [dependencies]
 bon = "3"
-bq_macros = { path = "../macros" }
+bq_macros = { version = "0.2.0", path = "../macros" }
 maud = { version = "0.27", features = ["axum"] }
 
 [[test]]

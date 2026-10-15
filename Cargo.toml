@@ -6,3 +6,4 @@ members = ["boutique", "components", "html", "macros", "setups"]
 version = "0.2.0"
 edition = "2024"
 publish = false
+repository = "https://github.com/avavuvu/boutique"
