@@ -9,6 +9,7 @@ use chrono::Utc;
 use crate::{
     cookies,
     error::AppError,
+    htmx,
     session,
     state::AuthState,
     store::{AuthStore, AuthUser, StoreError},
@@ -47,6 +48,7 @@ where
 
         match resolve(parts, &auth).await {
             Ok(Some(user)) => Ok(AuthenticatedUser(user)),
+            Ok(None) if htmx::is_htmx(&parts.headers) => Err(htmx::redirect(&auth.config.login_url)),
             Ok(None) => Err(Redirect::to(&auth.config.login_url).into_response()),
             Err(error) => Err(AppError::from(error).into_response()),
         }
