@@ -1,0 +1,168 @@
+@layer bq.components {
+    .prose {
+        --prose-font-body: var(--font-body);
+        --prose-font-title: var(--font-title);
+        --prose-color-link: var(--color-primary);
+        --prose-color-muted: var(--color-muted);
+        --prose-color-blockquote-border: var(--color-primary);
+        --prose-color-pullquote-border: var(--color-primary);
+        --prose-color-pullquote-surface: var(--color-surface-muted);
+        --prose-color-rule: var(--color-border);
+        --prose-measure: 70ch;
+
+        font-family: var(--prose-font-body);
+        font-size: var(--prose-font-size, 1em);
+        line-height: var(--prose-line-height, 1.6);
+
+        & :is(p, ul, ol, blockquote, pre, img, figure) + :is(p, ul, ol, blockquote, pre, img, figure) {
+            margin-block-start: var(--prose-space, 1em);
+        }
+
+        & * + :is(h1, h2, h3, h4, h5, h6) {
+            margin-block-start: var(--prose-heading-space-above, 1.75em);
+        }
+
+        & :is(h1, h2, h3, h4, h5, h6) + * {
+            margin-block-start: var(--prose-heading-space-below, 0.5em);
+        }
+
+        & :is(h1, h2, h3, h4, h5, h6) {
+            font-weight: bold;
+            text-align: var(--prose-heading-align, start);
+
+            & strong {
+                font-weight: normal;
+            }
+        }
+
+        & :is(h1, h2, h3, h4) {
+            font-family: var(--prose-font-title);
+        }
+
+        & h1 {
+            font-size: var(--prose-h1-size, var(--text-xl));
+        }
+
+        & h2 {
+            font-size: var(--prose-h2-size, var(--text-lg));
+        }
+
+        & h3 {
+            font-size: var(--prose-h3-size, 1.1em);
+        }
+
+        & :is(h4, h5, h6) {
+            font-size: 1em;
+        }
+
+        & a {
+            color: var(--prose-color-link);
+            text-decoration: underline;
+            text-underline-offset: 0.15em;
+        }
+
+        & :is(ul, ol) {
+            padding-inline-start: var(--prose-list-indent, 1.5em);
+        }
+
+        & ul {
+            list-style-type: disc;
+        }
+
+        & ol {
+            list-style-type: decimal;
+        }
+
+        & li + li,
+        & li > :is(ul, ol) {
+            margin-block-start: var(--prose-list-space, 0.25em);
+        }
+
+        & blockquote {
+            padding-inline-start: 1em;
+            border-inline-start: 3px solid var(--prose-color-blockquote-border);
+        }
+
+        & figure.pullquote {
+            margin-block: 1.5em;
+            padding: 1.25em 1.75em;
+            border-inline-start: 4px solid var(--prose-color-pullquote-border);
+            background-color: var(--prose-color-pullquote-surface);
+
+            & > blockquote {
+                padding: 0;
+                border: none;
+            }
+
+            & > :not(figcaption) {
+                font-size: 1.2em;
+                font-style: italic;
+            }
+
+            & > :not(figcaption) + :not(figcaption) {
+                margin-block-start: 0.5em;
+            }
+
+            & > figcaption {
+                margin-block-start: 1em;
+                color: var(--prose-color-muted);
+                font-size: 0.9em;
+                text-align: end;
+
+                &::before {
+                    content: "—";
+                    display: block;
+                }
+            }
+        }
+
+        & figure:not(.pullquote) > figcaption {
+            margin-block-start: 0.5em;
+            font-size: 0.875em;
+            line-height: 1.4;
+        }
+
+        & :is(img, figure)[data-width="full"] {
+            inline-size: 100vw;
+            max-inline-size: 100vw;
+            margin-inline: calc(50% - 50vw);
+        }
+
+        & figure[data-width="full"] {
+            & img {
+                inline-size: 100%;
+            }
+
+            & > figcaption {
+                padding-inline: max(0.5em, (100% - var(--prose-measure)) / 2 + 0.5em);
+            }
+        }
+
+        & hr {
+            margin-block: 2em;
+            border-block-start: var(--border-width) solid var(--prose-color-rule);
+        }
+
+        & code {
+            padding: 0.125em 0.25em;
+            border-radius: var(--radius);
+            background-color: var(--color-surface-muted);
+            font-size: 0.9em;
+        }
+
+        & pre {
+            overflow-x: auto;
+            padding: 0.75em;
+            border: var(--border-width) solid var(--color-border);
+            border-radius: var(--radius);
+            background-color: var(--color-surface-muted);
+            font-size: 0.875em;
+
+            & code {
+                padding: 0;
+                background: none;
+                font-size: inherit;
+            }
+        }
+    }
+}

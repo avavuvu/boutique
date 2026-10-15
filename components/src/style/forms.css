@@ -1,0 +1,66 @@
+@layer bq.components {
+    select {
+        padding: 0.5em 2.25em 0.5em 0.75em;
+        border: var(--border-width) solid var(--color-border);
+        border-radius: var(--radius);
+        background-color: var(--color-surface);
+        background-image:
+            linear-gradient(45deg, transparent 50%, currentColor 50%),
+            linear-gradient(135deg, currentColor 50%, transparent 50%);
+        background-position:
+            right 1.125em center,
+            right 0.75em center;
+        background-size: 0.375em 0.375em;
+        background-repeat: no-repeat;
+        color: var(--color-text);
+        appearance: none;
+        cursor: pointer;
+
+        &:is([multiple], [size]:not([size="1"])) {
+            padding-inline-end: 0.75em;
+            background-image: none;
+            cursor: auto;
+        }
+
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    }
+
+    input:where([type="checkbox"], [type="radio"]) {
+        flex: none;
+        inline-size: 1.125em;
+        block-size: 1.125em;
+        accent-color: var(--color-primary);
+        cursor: pointer;
+
+        &:disabled {
+            cursor: not-allowed;
+        }
+    }
+
+    label:has(> input:where([type="checkbox"], [type="radio"])) {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5em;
+        cursor: pointer;
+    }
+
+    fieldset {
+        min-inline-size: 0;
+        padding: var(--space-3) var(--space-4) var(--space-4);
+        border: var(--border-width) solid var(--color-border);
+        border-radius: var(--radius);
+
+        &:disabled {
+            opacity: 0.6;
+        }
+    }
+
+    legend {
+        padding-inline: var(--space-1);
+        font-size: 0.875em;
+        font-weight: bold;
+    }
+}
