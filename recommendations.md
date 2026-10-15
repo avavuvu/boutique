@@ -2,6 +2,49 @@
 
 Implementation plan for boutique, based on a review of boutique and its two consumer apps. Written for agents implementing it. Read **Working on this** before starting any item.
 
+## Progress
+
+As of 2026-10-15. Done items are committed on `main`; each commit message starts with its item number.
+
+| Item | State |
+|---|---|
+| 1.1, 1.2, 1.3 | Done |
+| 2.1, 2.2, 2.4, 2.5 | Done |
+| 2.3 | Open |
+| 2.6 | Crossword not migrated |
+| 3.1–3.11 | Done (3.1 has no `.auth(state)`: with the legacy layer gone, `Server` needs no auth) |
+| 4.1, 4.3–4.6 | Done (`.grid` is named `.auto-grid`) |
+| 4.2, 4.7 | Later |
+| 5 Bun | Done in boutique and showroom |
+| 5 file structure, 6, 7, 8 | Later |
+| 9.2 | Done except licenses and `publish = false` (see below) |
+| 9.4 | Done |
+| Showroom migration | Done (showroom commits `bf91f7f`…`284b213`) |
+
+### Open decisions from implementation
+
+1. **Licenses** for `bq_macros`, `bq_components`, `bq_setups` and `boutique` (`bq_html` is `MIT OR Apache-2.0` with maud's license files). Also: when to remove `publish = false`, and whether internal `version = "0.2.0"` requirements move into `[workspace.dependencies]`.
+2. **`components.css` is broader than the kit's look.** It also styles global `fieldset`, `legend`, `select`, `dialog`, `[popover]`, `.prose` and toasts, so an app cannot take only the button/input look. Proposal: `style/components.css` for kit components only; global element styles in an opt-in `style/elements.css`; `prose.css` opt-in.
+3. **Class-name collisions.** `.flow`, `.article-layout` and `.prose` merge with app rules of the same name (showroom had to override `grid-column`). Decide whether boutique's primitives get a prefix.
+4. **Error page fallbacks.** If an extractor in the `error_page` render handler fails, its rejection body becomes the page; boutique should fall back to `views::error_page`. Plain-text error bodies (e.g. axum's form deserialisation messages) are no longer shown.
+
+### Known rough edges
+
+- `Generator` without `.boutique()` produces imports of `./boutique/setups` that nothing writes. Write the runtime unconditionally.
+- `components/src/setups.ts` fails `noUncheckedIndexedAccess` (around line 225). It now lives in the app as plain `.ts`, so `skipLibCheck` does not hide it.
+- Bare `bq-setup` detection recognises `html!` by name only; a renamed import (`use … html as h`) gives a false "outside a component" error.
+- The generator message `… is not inside an element with bq-setup=(DirtyForm)` still shows the old syntax.
+- `UserEntity::PASSWORD_HASH` duplicates `AuthUser::password_hash`.
+- `bq_setups` now compiles `bq_components`, `bq_macros`, `bon` and `maud` for the host as a build dependency.
+- `yoke-derive 0.8.3` in `Cargo.lock` is yanked.
+
+### Before showroom deploys
+
+- Push boutique and bump showroom's boutique revs (still `7369760`); local builds only work through `.cargo/config.toml`.
+- Add a bun buildpack on Heroku; the root `build` script now runs `bun install && bun run build`.
+- Review the visual differences in a browser. The migration report lists them: prose line-height 1.6, focus rings, legend styling, popover transitions, auto-growing textareas, and others. Each is a one-line override.
+- Outstanding password-reset links stop working on deploy (3.11).
+
 ## Working on this
 
 ### Repositories
@@ -616,7 +659,7 @@ Only section 1 is affected; sections 2–8 are not.
 - `Generator::boutique()` must not read `CARGO_MANIFEST_DIR/../components/src`; that path does not exist for a published crate. Solved by 9.4.
 - Crates publish in order: `bq_html` → `bq_macros` → `bq_components` → `bq_setups` → `boutique`. Path dependencies need `version =`.
 - Remove `publish = false` from `[workspace.package]`. Add `license`, `description` and `repository` to every crate. `bq_html` keeps maud's license files.
-- `boutique` is free on crates.io; `bq_*` names are unchecked. `boutique` is taken on npm, which 9.4 makes irrelevant.
+- `boutique`, `bq_html`, `bq_macros`, `bq_components` and `bq_setups` are free on crates.io (checked 2026-10-15). `boutique` is taken on npm, which 9.4 makes irrelevant.
 - Versions can be yanked but not deleted.
 
 ### 9.3 Releasing
