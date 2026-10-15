@@ -19,7 +19,6 @@
             color: var(--color-text);
 
             &:focus-visible {
-                outline: var(--focus-ring-width) solid var(--focus-ring-color);
                 outline-offset: 1px;
             }
         }
