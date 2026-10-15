@@ -218,6 +218,17 @@ mod tests {
     }
 
     #[test]
+    fn tampered_expiry() {
+        let state = state();
+        let token = token_for(&state, &user("alice"));
+        let mut parts = token.split('.');
+        let (user_id, expires, signature) = (parts.next().unwrap(), parts.next().unwrap(), parts.next().unwrap());
+        let later = expires.parse::<i64>().unwrap() + 3600;
+        let token = format!("{user_id}.{later}.{signature}");
+        assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
+    }
+
+    #[test]
     fn tampered_mac() {
         let state = state();
         let mut token = token_for(&state, &user("alice"));
