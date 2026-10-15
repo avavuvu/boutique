@@ -7,7 +7,7 @@ use axum::{
     routing::get,
 };
 
-pub const HTMX_PATH: &str = "/boutique/htmx.js";
+pub const HTMX_PATH: &str = concat!("/boutique/htmx-", env!("BOUTIQUE_HTMX_HASH"), ".js");
 pub const BUILD_ROUTE: &str = "/build";
 pub const BUILD_DIR: &str = "public/build";
 
@@ -16,7 +16,7 @@ fn script(body: &'static str) -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
         ],
         body,
     )
