@@ -141,6 +141,9 @@ pub fn setup(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut func = parse_macro_input!(item as ItemFn);
+    if let Err(error) = translate_params(&mut func) {
+        return error.to_compile_error().into();
+    }
 
     let pascal = func.sig.ident.unraw().to_string().to_upper_camel_case();
     let docs = component_docs(&pascal, &func);
@@ -208,6 +211,70 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+fn is_type(ty: &syn::Type, name: &str) -> bool {
+    let syn::Type::Path(path) = ty else { return false };
+    path.qself.is_none()
+        && path
+            .path
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == name && segment.arguments.is_none())
+}
+
+fn translate_params(func: &mut ItemFn) -> syn::Result<()> {
+    for input in func.sig.inputs.iter_mut() {
+        let syn::FnArg::Typed(typed) = input else { continue };
+        let raw = builder_options(&typed.attrs);
+        let mut defaulted = raw.default.is_some();
+        let mut fixed = raw.start_fn || raw.fixed;
+        let mut translated: Vec<syn::Attribute> = Vec::new();
+        let mut kept = Vec::new();
+
+        for attr in std::mem::take(&mut typed.attrs) {
+            if attr.path().is_ident("default") {
+                if defaulted {
+                    return Err(syn::Error::new_spanned(&attr, "this parameter already has a default"));
+                }
+                defaulted = true;
+                translated.push(match &attr.meta {
+                    syn::Meta::Path(_) => syn::parse_quote!(#[builder(default)]),
+                    syn::Meta::NameValue(pair) => {
+                        let value = &pair.value;
+                        syn::parse_quote!(#[builder(default = #value)])
+                    }
+                    syn::Meta::List(_) => {
+                        return Err(syn::Error::new_spanned(&attr, "expected `#[default]` or `#[default = …]`"));
+                    }
+                });
+            } else if attr.path().is_ident("positional") {
+                if !matches!(attr.meta, syn::Meta::Path(_)) {
+                    return Err(syn::Error::new_spanned(&attr, "`#[positional]` takes no arguments"));
+                }
+                fixed = true;
+                translated.push(syn::parse_quote!(#[builder(start_fn)]));
+            } else {
+                kept.push(attr);
+            }
+        }
+
+        if !defaulted && !fixed {
+            let name = match typed.pat.as_ref() {
+                syn::Pat::Ident(pattern) => pattern.ident.unraw().to_string(),
+                _ => String::new(),
+            };
+            if is_type(&typed.ty, "bool") {
+                translated.push(syn::parse_quote!(#[builder(default = false)]));
+            } else if (name == "attrs" && is_type(&typed.ty, "Attrs")) || name == "children" {
+                translated.push(syn::parse_quote!(#[builder(default)]));
+            }
+        }
+
+        kept.extend(translated);
+        typed.attrs = kept;
+    }
+    Ok(())
+}
+
 #[derive(PartialEq)]
 enum Role {
     Positional,
@@ -229,6 +296,7 @@ struct Prop {
 #[derive(Default)]
 struct BuilderOptions {
     start_fn: bool,
+    fixed: bool,
     required: bool,
     into: bool,
     default: Option<Option<String>>,
@@ -268,6 +336,8 @@ fn builder_options(attrs: &[syn::Attribute]) -> BuilderOptions {
 
             if meta.path.is_ident("start_fn") {
                 options.start_fn = true;
+            } else if meta.path.is_ident("finish_fn") || meta.path.is_ident("skip") || meta.path.is_ident("field") {
+                options.fixed = true;
             } else if meta.path.is_ident("required") {
                 options.required = true;
             } else if meta.path.is_ident("into") {
@@ -335,7 +405,7 @@ fn props(func: &ItemFn) -> Vec<Prop> {
             };
 
             Some(Prop {
-                maybe: role == Role::Named && optional_option,
+                maybe: role == Role::Named && !required,
                 name,
                 ty: ty.replace('|', "\\|"),
                 role,
@@ -391,7 +461,7 @@ fn component_docs(pascal: &str, func: &ItemFn) -> Vec<String> {
 
     if props.iter().any(|prop| prop.maybe) {
         lines.push(String::new());
-        lines.push(" Optional props also have a `maybe_` setter that takes an `Option`.".to_string());
+        lines.push(" Optional props also have a `maybe_` setter that takes an `Option`. In `html!`, write `prop = [value]`.".to_string());
     }
 
     lines

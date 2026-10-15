@@ -73,15 +73,15 @@ fn described_by(id: &str, hint: Option<&str>) -> String {
 
 #[component]
 pub fn input(
-    #[builder(start_fn)] name: &str,
+    #[positional] name: &str,
     id: Option<&str>,
-    #[builder(default)] kind: Kind,
+    #[default] kind: Kind,
     label: Option<&str>,
     hint: Option<&str>,
     error: Option<&str>,
     prefix: Option<&str>,
     suffix: Option<&str>,
-    #[builder(default)] attrs: Attrs,
+    attrs: Attrs,
 ) -> Markup {
     let id = id.unwrap_or(name);
 
@@ -139,13 +139,13 @@ pub fn input(
 
 #[component]
 pub fn textarea(
-    #[builder(start_fn)] name: &str,
+    #[positional] name: &str,
     id: Option<&str>,
     label: Option<&str>,
     hint: Option<&str>,
     error: Option<&str>,
     value: Option<&str>,
-    #[builder(default)] attrs: Attrs,
+    attrs: Attrs,
 ) -> Markup {
     let id = id.unwrap_or(name);
 

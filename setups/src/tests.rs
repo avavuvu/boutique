@@ -71,7 +71,7 @@ fn several_setups_on_one_element() {
 const MENU: &str = r##"
     setup!(Menu);
     #[component]
-    pub fn menu(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+    pub fn menu(attrs: Attrs, children: Markup) -> Markup {
         html! {
             div.menu bq-setup=(Menu) {
                 button bq-ref="button" bq-on:click="toggle" (..attrs) {}
@@ -267,7 +267,7 @@ fn literal_element_tags() {
 
 const CARD: &str = r##"
     #[component]
-    pub fn card(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+    pub fn card(attrs: Attrs, children: Markup) -> Markup {
         html! { section.card (..attrs) { h2 {} (children) } }
     }
 "##;
@@ -318,7 +318,7 @@ fn call_site_reference_uses_the_component_tags() {
     let (types, _, warnings) = ok(&[
         (1, "button.rs", r##"
             #[component]
-            pub fn button(href: Option<&str>, #[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+            pub fn button(href: Option<&str>, attrs: Attrs, children: Markup) -> Markup {
                 html! { @element(if href.is_some() { "a" } else { "button" }) .button href=[href] (..attrs) { (children) } }
             }
         "##),
@@ -337,11 +337,11 @@ fn children_pass_through_nested_components() {
         (0, "ui.rs", r##"
             setup!(Inner);
             #[component]
-            pub fn inner(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+            pub fn inner(attrs: Attrs, children: Markup) -> Markup {
                 html! { div bq-setup=(Inner) (..attrs) { (children) } }
             }
             #[component]
-            pub fn outer(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+            pub fn outer(attrs: Attrs, children: Markup) -> Markup {
                 html! { Inner (..attrs) { aside { (children) } } }
             }
         "##),
@@ -592,7 +592,7 @@ fn call_site_handler_with_the_same_attribute_merges() {
         (0, "form.rs", r##"
             setup!(DirtyForm);
             #[component]
-            pub fn dirty_form(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+            pub fn dirty_form(attrs: Attrs, children: Markup) -> Markup {
                 html! { form bq-setup=(DirtyForm) bq-on:input="dirty-form.update" (..attrs) { (children) } }
             }
         "##),

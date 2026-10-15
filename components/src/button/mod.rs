@@ -6,10 +6,10 @@ use crate::{Attrs, component, html};
 pub fn button(
     href: Option<&str>,
     post: Option<&str>,
-    #[builder(default)] submit: bool,
-    #[builder(default)] disabled: bool,
-    #[builder(default)] attrs: Attrs,
-    #[builder(default = html! {})] children: Markup,
+    submit: bool,
+    disabled: bool,
+    attrs: Attrs,
+    children: Markup,
 ) -> Markup {
     debug_assert!(
         href.is_none() || post.is_none(),

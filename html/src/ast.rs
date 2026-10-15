@@ -316,6 +316,7 @@ pub enum ComponentArg {
     Named {
         name: Ident,
         eq_token: Eq,
+        maybe: Option<Bracket>,
         value: Expr,
     },
 }
@@ -327,10 +328,19 @@ impl Parse for ComponentArg {
             && !input.peek2(EqEq)
             && !input.peek2(FatArrow);
         if named {
+            let name = input.parse()?;
+            let eq_token = input.parse()?;
+            let (maybe, value) = match input.parse()? {
+                Expr::Array(array) if array.elems.len() == 1 && !array.elems.trailing_punct() => {
+                    (Some(array.bracket_token), array.elems.into_iter().next().unwrap())
+                }
+                value => (None, value),
+            };
             Ok(Self::Named {
-                name: input.parse()?,
-                eq_token: input.parse()?,
-                value: input.parse()?,
+                name,
+                eq_token,
+                maybe,
+                value,
             })
         } else {
             input.parse().map(Self::Positional)
@@ -345,11 +355,15 @@ impl ToTokens for ComponentArg {
             Self::Named {
                 name,
                 eq_token,
+                maybe,
                 value,
             } => {
                 name.to_tokens(tokens);
                 eq_token.to_tokens(tokens);
-                value.to_tokens(tokens);
+                match maybe {
+                    Some(bracket_token) => bracket_token.surround(tokens, |tokens| value.to_tokens(tokens)),
+                    None => value.to_tokens(tokens),
+                }
             }
         }
     }

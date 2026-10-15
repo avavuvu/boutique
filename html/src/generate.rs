@@ -141,7 +141,11 @@ impl Generator {
         for arg in args {
             match arg {
                 ComponentArg::Positional(expr) => positional.push(expr),
-                ComponentArg::Named { name, value, .. } => named.push(quote!(.#name(#value))),
+                ComponentArg::Named { name, maybe: None, value, .. } => named.push(quote!(.#name(#value))),
+                ComponentArg::Named { name, maybe: Some(_), value, .. } => {
+                    let setter = Ident::new(&format!("maybe_{}", name.unraw()), name.span());
+                    named.push(quote!(.#setter(#value)));
+                }
             }
         }
 

@@ -1,7 +1,7 @@
 use bq_components::{Attrs, attrs, component, html, maud::Markup};
 
 #[component]
-fn panel(#[builder(default)] attrs: Attrs, #[builder(default = html! {})] children: Markup) -> Markup {
+fn panel(attrs: Attrs, #[default = html! {}] children: Markup) -> Markup {
     html! { section bq-on:click="own" (..attrs) { (children) } }
 }
 

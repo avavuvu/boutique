@@ -5,11 +5,11 @@ use bq_components::{
 
 #[component]
 fn card(
-    #[builder(start_fn)] title: &str,
+    #[positional] title: &str,
     subtitle: Option<&str>,
-    #[builder(default)] wide: bool,
-    #[builder(default)] attrs: Attrs,
-    #[builder(default = html! {})] children: Markup,
+    wide: bool,
+    attrs: Attrs,
+    children: Markup,
 ) -> Markup {
     html! {
         section.card.wide[wide] (..attrs) {
@@ -21,7 +21,7 @@ fn card(
 }
 
 #[component]
-fn post_button(#[builder(start_fn)] action: &str, #[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+fn post_button(#[positional] action: &str, attrs: Attrs, children: Markup) -> Markup {
     html! {
         form method="POST" action=(action) {
             button.button type="submit" (..attrs) { (children) }
@@ -44,7 +44,7 @@ mod ui {
     use bq_components::{Attrs, component, html, maud::Markup};
 
     #[component]
-    pub fn badge(#[builder(default)] attrs: Attrs, children: Markup) -> Markup {
+    pub fn badge(#[default] attrs: Attrs, children: Markup) -> Markup {
         html! { span.badge (..attrs) { (children) } }
     }
 }
