@@ -1,5 +1,6 @@
 use heck::{ToKebabCase, ToUpperCamelCase};
 use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
 use quote::{format_ident, quote};
 use syn::{
     Expr, GenericParam, Ident, ItemFn, Lifetime, LitStr, Token, Visibility,
@@ -37,9 +38,27 @@ fn valid_attribute_name(name: &str) -> bool {
             .all(|character| !character.is_whitespace() && !character.is_control() && !"\"'<>/=`".contains(character))
 }
 
+fn krate() -> proc_macro2::TokenStream {
+    let ident = |name: &str| Ident::new(name, proc_macro2::Span::call_site());
+    match crate_name("bq_components") {
+        Ok(FoundCrate::Itself) => quote!(::bq_components),
+        Ok(FoundCrate::Name(name)) => {
+            let name = ident(&name);
+            quote!(::#name)
+        }
+        Err(_) => match crate_name("boutique") {
+            Ok(FoundCrate::Name(name)) => {
+                let name = ident(&name);
+                quote!(::#name::components)
+            }
+            _ => quote!(::bq_components),
+        },
+    }
+}
+
 #[proc_macro]
 pub fn html(input: TokenStream) -> TokenStream {
-    bq_html::expand(input.into()).into()
+    bq_html::expand(input.into(), krate()).into()
 }
 
 #[proc_macro]
@@ -47,6 +66,7 @@ pub fn attrs(input: TokenStream) -> TokenStream {
     let pairs = parse_macro_input!(input with Punctuated::<AttributePair, Token![,]>::parse_terminated);
     let attrs = proc_macro2::Ident::new("__bq_attrs", proc_macro2::Span::mixed_site());
     let buffer = proc_macro2::Ident::new("__bq_value", proc_macro2::Span::mixed_site());
+    let krate = krate();
 
     let mut seen = std::collections::HashSet::new();
     let mut items = Vec::new();
@@ -63,7 +83,7 @@ pub fn attrs(input: TokenStream) -> TokenStream {
         items.push(match &pair.value {
             Some(value) => quote! {{
                 let mut #buffer = ::std::string::String::new();
-                ::bq_components::maud::macro_private::render_to!(&(#value), &mut #buffer);
+                #krate::maud::macro_private::render_to!(&(#value), &mut #buffer);
                 #attrs.__text(#name, #buffer);
             }},
             None => quote!(#attrs.__flag(#name);),
@@ -71,7 +91,7 @@ pub fn attrs(input: TokenStream) -> TokenStream {
     }
 
     quote! {{
-        let mut #attrs = ::bq_components::Attrs::new();
+        let mut #attrs = #krate::Attrs::new();
         #(#items)*
         #attrs
     }}
@@ -101,6 +121,7 @@ impl Parse for SetupDeclaration {
 pub fn setup(input: TokenStream) -> TokenStream {
     let SetupDeclaration { visibility, name } = parse_macro_input!(input as SetupDeclaration);
     let attribute = name.to_string().to_kebab_case();
+    let krate = krate();
 
     quote! {
         #visibility enum #name {}
@@ -109,7 +130,7 @@ pub fn setup(input: TokenStream) -> TokenStream {
             #visibility const NAME: &'static str = #attribute;
         }
 
-        impl ::bq_components::Setup for #name {
+        impl #krate::Setup for #name {
             const NAME: &'static str = #attribute;
         }
     }
@@ -161,10 +182,11 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let lifetimes_named = named.iter().filter(|p| matches!(p, GenericParam::Lifetime(_)));
     let others_named = named.iter().filter(|p| !matches!(p, GenericParam::Lifetime(_)));
+    let krate = krate();
 
     let expanded = quote! {
-        #[::bq_components::bon::builder(
-            crate = ::bq_components::bon,
+        #[#krate::bon::builder(
+            crate = #krate::bon,
             builder_type(name = #builder, doc { #(#[doc = #docs])* }),
             state_mod = #state_mod,
             finish_fn = build,
@@ -175,9 +197,9 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #alias
 
         impl<#(#lifetimes_named,)* #(#generated,)* #(#others_named,)* __S: #state_mod::IsComplete>
-            ::bq_components::maud::Render for #builder<#(#named_args,)* #(#generated,)* __S>
+            #krate::maud::Render for #builder<#(#named_args,)* #(#generated,)* __S>
         {
-            fn render(&self) -> ::bq_components::maud::Markup {
+            fn render(&self) -> #krate::maud::Markup {
                 ::core::clone::Clone::clone(self).build()
             }
         }

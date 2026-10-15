@@ -8,19 +8,20 @@ use syn::{
 
 use crate::{ast::*, escape};
 
-pub fn generate(markups: Markups<Element>, output_ident: Ident) -> TokenStream {
+pub fn generate(markups: Markups<Element>, output_ident: Ident, krate: TokenStream) -> TokenStream {
     let mut build = Builder::new(output_ident.clone());
-    Generator::new(output_ident).markups(markups, &mut build);
+    Generator::new(output_ident, krate).markups(markups, &mut build);
     build.finish()
 }
 
 struct Generator {
     output_ident: Ident,
+    krate: TokenStream,
 }
 
 impl Generator {
-    fn new(output_ident: Ident) -> Generator {
-        Generator { output_ident }
+    fn new(output_ident: Ident, krate: TokenStream) -> Generator {
+        Generator { output_ident, krate }
     }
 
     fn builder(&self) -> Builder {
@@ -70,7 +71,8 @@ impl Generator {
 
     fn splice(&self, expr: Expr, build: &mut Builder) {
         let output_ident = &self.output_ident;
-        build.push_tokens(quote!(::bq_components::maud::macro_private::render_to!(&(#expr), &mut #output_ident);));
+        let krate = &self.krate;
+        build.push_tokens(quote!(#krate::maud::macro_private::render_to!(&(#expr), &mut #output_ident);));
     }
 
     fn element(&self, element: Element, build: &mut Builder) {
@@ -113,9 +115,10 @@ impl Generator {
             inner.push_str(">");
         }
         let inner = inner.finish();
+        let krate = &self.krate;
 
         build.push_tokens(quote! {{
-            let #tag: &'static str = ::bq_components::__private::tag(#expr);
+            let #tag: &'static str = #krate::__private::tag(#expr);
             #inner
         }});
     }
@@ -129,6 +132,7 @@ impl Generator {
         build: &mut Builder,
     ) {
         let output_ident = &self.output_ident;
+        let krate = &self.krate;
         let span = path.span();
         let function = component_function(&path);
 
@@ -155,14 +159,14 @@ impl Generator {
             ElementBody::Block(block) => {
                 let children = Ident::new("__bq_children", Span::mixed_site());
                 let mut inner = Builder::new(children.clone());
-                Generator::new(children.clone()).markups(block.markups, &mut inner);
+                Generator::new(children.clone(), krate.clone()).markups(block.markups, &mut inner);
                 let inner = inner.finish();
                 let children_method = Ident::new("children", span);
                 quote! {
                     .#children_method({
                         let mut #children = alloc::string::String::new();
                         #inner
-                        ::bq_components::maud::PreEscaped(#children)
+                        #krate::maud::PreEscaped(#children)
                     })
                 }
             }
@@ -171,7 +175,7 @@ impl Generator {
         let build_method = Ident::new("build", span);
         build.push_tokens(quote! {{
             #attrs_stmts
-            ::bq_components::maud::macro_private::render_to!(
+            #krate::maud::macro_private::render_to!(
                 &(#function(#(#positional),*) #(#named)* #attrs_setter #children_setter .#build_method()),
                 &mut #output_ident
             );
@@ -179,8 +183,9 @@ impl Generator {
     }
 
     fn component_attrs(&self, attrs_ident: &Ident, mut attrs: Vec<Attribute>) -> TokenStream {
-        setup_attrs(&mut attrs);
-        let mut stmts = vec![quote!(let mut #attrs_ident = ::bq_components::Attrs::new();)];
+        let krate = &self.krate;
+        setup_attrs(&mut attrs, krate);
+        let mut stmts = vec![quote!(let mut #attrs_ident = #krate::Attrs::new();)];
         let mut skip = Vec::new();
         let mut spreads = Vec::new();
 
@@ -193,6 +198,7 @@ impl Generator {
                             quote!(#attrs_ident.__class(#escaped);)
                         }
                         HtmlNameOrMarkup::Markup(markup) => rendered(
+                            krate,
                             |generator, build| generator.markup(markup, build),
                             |part| quote!(#attrs_ident.__class(&#part);),
                         ),
@@ -210,6 +216,7 @@ impl Generator {
                             quote!(#attrs_ident.__text("id", alloc::string::String::from(#escaped));)
                         }
                         HtmlNameOrMarkup::Markup(markup) => rendered(
+                            krate,
                             |generator, build| generator.markup(markup, build),
                             |part| quote!(#attrs_ident.__text("id", #part);),
                         ),
@@ -222,6 +229,7 @@ impl Generator {
                     }
                     stmts.push(match attr_type {
                         AttributeType::Normal { value, .. } => rendered(
+                            krate,
                             |generator, build| generator.markup(value, build),
                             |part| quote!(#attrs_ident.__text(#name, #part);),
                         ),
@@ -231,6 +239,7 @@ impl Generator {
                         } => {
                             let inner_value: Expr = parse_quote!(inner_value);
                             let push = rendered(
+                                krate,
                                 |generator, build| generator.splice(inner_value.clone(), build),
                                 |part| quote!(#attrs_ident.__text(#name, #part);),
                             );
@@ -307,7 +316,7 @@ impl Generator {
     }
 
     fn attrs(&self, mut attrs: Vec<Attribute>, build: &mut Builder) {
-        setup_attrs(&mut attrs);
+        setup_attrs(&mut attrs, &self.krate);
         let (classes, id, named_attrs, spreads) = split_attrs(attrs);
 
         let class_attrs = named_attrs.iter().filter(|(name, _)| name.to_string() == "class").count();
@@ -373,6 +382,7 @@ impl Generator {
         build: &mut Builder,
     ) {
         let output_ident = &self.output_ident;
+        let krate = &self.krate;
         let spread = Ident::new("__bq_spread", Span::mixed_site());
         let class = Ident::new("__bq_class", Span::mixed_site());
         let spread_class = Ident::new("__bq_spread_class", Span::mixed_site());
@@ -382,10 +392,10 @@ impl Generator {
             let push = match name {
                 HtmlNameOrMarkup::HtmlName(name) => {
                     let escaped = escaped(&name.to_string());
-                    quote!(::bq_components::__private::push_class(&mut #class, #escaped);)
+                    quote!(#krate::__private::push_class(&mut #class, #escaped);)
                 }
                 HtmlNameOrMarkup::Markup(markup) => {
-                    class_part(&class, |generator, build| generator.markup(markup, build))
+                    class_part(krate, &class, |generator, build| generator.markup(markup, build))
                 }
             };
             class_parts.push(match toggler {
@@ -403,7 +413,7 @@ impl Generator {
             if merges(&text)
                 && let AttributeType::Normal { value, .. } = attr_type
             {
-                let part = class_part(&list, |generator, build| generator.markup(value, build));
+                let part = class_part(krate, &list, |generator, build| generator.markup(value, build));
                 match groups.iter_mut().find(|(group, _)| *group == text) {
                     Some((_, parts)) => parts.push(part),
                     None => {
@@ -421,7 +431,7 @@ impl Generator {
             }
             match attr_type {
                 AttributeType::Normal { value, .. } => {
-                    class_parts.push(class_part(&class, |generator, build| {
+                    class_parts.push(class_part(krate, &class, |generator, build| {
                         generator.markup(value, build)
                     }));
                 }
@@ -430,7 +440,7 @@ impl Generator {
                     ..
                 } => {
                     let inner_value: Expr = parse_quote!(inner_value);
-                    let push = class_part(&class, |generator, build| {
+                    let push = class_part(krate, &class, |generator, build| {
                         generator.splice(inner_value.clone(), build)
                     });
                     class_parts.push(quote!(if let Some(#inner_value) = (#cond) { #push }));
@@ -444,11 +454,11 @@ impl Generator {
 
         let spread_binding = match spreads.as_slice() {
             [] => None,
-            [expr] => Some(quote!(let #spread: &::bq_components::Attrs = &(#expr);)),
+            [expr] => Some(quote!(let #spread: &#krate::Attrs = &(#expr);)),
             _ => {
                 let merged = Ident::new("__bq_merged", Span::mixed_site());
                 Some(quote! {
-                    let mut #merged = ::bq_components::Attrs::new();
+                    let mut #merged = #krate::Attrs::new();
                     #(#merged.__extend(&(#spreads));)*
                     let #spread = &#merged;
                 })
@@ -457,7 +467,7 @@ impl Generator {
         let spread_class_part = spread_binding.is_some().then(|| {
             quote! {
                 if let Some(#spread_class) = #spread.class() {
-                    ::bq_components::__private::push_class(&mut #class, #spread_class.0);
+                    #krate::__private::push_class(&mut #class, #spread_class.0);
                 }
             }
         });
@@ -493,7 +503,7 @@ impl Generator {
                     let spread_part = spread_binding.is_some().then(|| {
                         quote! {
                             if let Some(#spread_list) = #spread.__value(#name) {
-                                ::bq_components::__private::push_class(&mut #list, #spread_list);
+                                #krate::__private::push_class(&mut #list, #spread_list);
                             }
                         }
                     });
@@ -511,7 +521,7 @@ impl Generator {
 
         if spread_binding.is_some() {
             inner.push_tokens(quote! {
-                ::bq_components::__private::write_attrs(&mut #output_ident, #spread, &[#(#skip),*]);
+                #krate::__private::write_attrs(&mut #output_ident, #spread, &[#(#skip),*]);
             });
         }
 
@@ -651,7 +661,7 @@ fn merges(name: &str) -> bool {
     name == "bq-setup" || name == "bq-ref" || name.starts_with("bq-on:")
 }
 
-fn setup_attrs(attrs: &mut [Attribute]) {
+fn setup_attrs(attrs: &mut [Attribute], krate: &TokenStream) {
     for attr in attrs {
         if let Attribute::Named {
             name,
@@ -659,22 +669,22 @@ fn setup_attrs(attrs: &mut [Attribute]) {
         } = attr
             && name.to_string() == "bq-setup"
         {
-            setup_value(value);
+            setup_value(value, krate);
         }
     }
 }
 
-fn setup_value(markup: &mut Markup<NoElement>) {
+fn setup_value(markup: &mut Markup<NoElement>, krate: &TokenStream) {
     match markup {
         Markup::Splice { expr, .. } => {
             if let Expr::Path(path) = expr {
                 let path = path.clone();
-                *expr = parse_quote!(<#path as ::bq_components::Setup>::NAME);
+                *expr = parse_quote!(<#path as #krate::Setup>::NAME);
             }
         }
         Markup::Block(block) => {
             for markup in &mut block.markups.markups {
-                setup_value(markup);
+                setup_value(markup, krate);
             }
         }
         _ => {}
@@ -688,12 +698,13 @@ fn escaped(text: &str) -> String {
 }
 
 fn rendered(
+    krate: &TokenStream,
     write: impl FnOnce(&Generator, &mut Builder),
     then: impl FnOnce(&Ident) -> TokenStream,
 ) -> TokenStream {
     let part = Ident::new("__bq_part", Span::mixed_site());
     let mut build = Builder::new(part.clone());
-    write(&Generator::new(part.clone()), &mut build);
+    write(&Generator::new(part.clone(), krate.clone()), &mut build);
     let body = build.finish();
     let then = then(&part);
     quote! {{
@@ -703,8 +714,8 @@ fn rendered(
     }}
 }
 
-fn class_part(class: &Ident, write: impl FnOnce(&Generator, &mut Builder)) -> TokenStream {
-    rendered(write, |part| quote!(::bq_components::__private::push_class(&mut #class, &#part);))
+fn class_part(krate: &TokenStream, class: &Ident, write: impl FnOnce(&Generator, &mut Builder)) -> TokenStream {
+    rendered(krate, write, |part| quote!(#krate::__private::push_class(&mut #class, &#part);))
 }
 
 fn component_function(path: &Path) -> Path {
