@@ -8,7 +8,13 @@ pub fn base(context: &Head, content: Markup) -> Markup {
         html lang="en" class=[context.class.as_deref()] data-theme=[context.theme.as_deref()] {
             head {
                 meta charset="UTF-8";
-                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                meta name="viewport" content=(context.viewport);
+                @if let Some(manifest) = &context.manifest {
+                    link rel="manifest" href=(manifest);
+                }
+                @if let Some(color) = &context.theme_color {
+                    meta name="theme-color" content=(color);
+                }
                 @if let Some(favicon) = &context.favicon {
                     link rel="icon" type="image/x-icon" href=(favicon);
                 }

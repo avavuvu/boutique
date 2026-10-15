@@ -9,6 +9,9 @@ pub struct Head {
     pub metadata: Option<Metadata>,
     pub class: Option<String>,
     pub theme: Option<String>,
+    pub viewport: String,
+    pub manifest: Option<String>,
+    pub theme_color: Option<String>,
 }
 
 impl Head {
@@ -22,7 +25,25 @@ impl Head {
             metadata: None,
             class: None,
             theme: None,
+            viewport: "width=device-width, initial-scale=1.0".into(),
+            manifest: None,
+            theme_color: None,
         }
+    }
+
+    pub fn viewport(mut self, content: impl Into<String>) -> Self {
+        self.viewport = content.into();
+        self
+    }
+
+    pub fn manifest(mut self, href: impl Into<String>) -> Self {
+        self.manifest = Some(href.into());
+        self
+    }
+
+    pub fn theme_color(mut self, color: impl Into<String>) -> Self {
+        self.theme_color = Some(color.into());
+        self
     }
 
     pub fn preload_font(mut self, href: impl Into<String>) -> Self {
