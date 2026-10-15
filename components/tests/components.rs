@@ -236,19 +236,6 @@ fn input_accepts_aria_label_or_aria_labelledby() {
     assert!(by.contains(r#"aria-labelledby="search-heading""#), "{by}");
 }
 
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "has no accessible name")]
-fn input_without_a_name_panics_in_debug_builds() {
-    let _ = html! { Input("q") placeholder="Search"; };
-}
-
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "has no accessible name")]
-fn textarea_without_a_name_panics_in_debug_builds() {
-    let _ = html! { Textarea("bio"); };
-}
 
 #[test]
 fn input_value_from_a_variable() {

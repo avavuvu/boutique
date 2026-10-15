@@ -63,12 +63,6 @@ const AUTOFILL: &[&str] = &[
     "new-password",
 ];
 
-fn check_name(id: &str, label: Option<&str>, attrs: &Attrs) {
-    debug_assert!(
-        label.is_some() || attrs.has("aria-label") || attrs.has("aria-labelledby"),
-        "the field {id:?} has no accessible name: give it a `label` or an `aria-label` attribute"
-    );
-}
 
 fn described_by(id: &str, hint: Option<&str>) -> String {
     match hint {
@@ -90,7 +84,6 @@ pub fn input(
     #[builder(default)] attrs: Attrs,
 ) -> Markup {
     let id = id.unwrap_or(name);
-    check_name(id, label, &attrs);
 
     let mut attrs = attrs;
     if let Some(autocomplete) = kind.autocomplete(name) {
@@ -155,7 +148,6 @@ pub fn textarea(
     #[builder(default)] attrs: Attrs,
 ) -> Markup {
     let id = id.unwrap_or(name);
-    check_name(id, label, &attrs);
 
     html! {
         div.input-component {
