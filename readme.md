@@ -40,10 +40,19 @@ If you give `Input` an `id` that differs from its name, its error element follow
 Boutique's CSS uses cascade layers, in this order:
 
 ```css
-@layer bq.reset, bq.tokens, bq.base, bq.components, app;
+@layer bq.reset, bq.tokens, bq.base, bq.elements, bq.components, app;
 ```
 
-- `style/index.css` is the core: reset, tokens, roles, base defaults and layout primitives (`.flow`, `.article-layout`, `.stack`, `.cluster`, `.center`, `.sidebar`, `.switcher`, `.auto-grid`).
-- `style/components.css` is the UI kit's look, in `bq.components`. Import it only if you want it.
+Import `style/index.css` first, then any of the optional entries:
+
+| Entry | Contents | Layer |
+|---|---|---|
+| `style/index.css` | Core: reset, tokens, roles, base defaults and layout primitives (`.flow`, `.article-layout`, `.stack`, `.cluster`, `.center`, `.sidebar`, `.switcher`, `.auto-grid`) | `bq.reset`, `bq.tokens`, `bq.base` |
+| `style/components.css` | The UI kit's look: `.button`, `.input-component` | `bq.components` |
+| `style/elements.css` | Global element styles: `select`, checkbox/radio, `fieldset`, `legend`, `dialog`, `[popover]` | `bq.elements` |
+| `style/prose.css` | `.prose` for long-form text | `bq.components` |
+| `style/feedback.css` | `.toasts`, `.toast`, `.flash`, `.skeleton` | `bq.components` |
+
+Only `components.css` and `elements.css` style anything without a class you add yourself: `components.css` styles markup the kit renders, and `elements.css` styles bare elements across the whole app. `bq.elements` sits below `bq.components`, so kit classes win over element defaults.
 
 Put app CSS in `@layer app` or leave it unlayered. Either beats every boutique layer, regardless of specificity, so restyle the kit by overriding tokens or rules rather than copying files.

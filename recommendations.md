@@ -24,7 +24,7 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 ### Open decisions from implementation
 
 1. **Licenses** for `bq_macros`, `bq_components`, `bq_setups` and `boutique` (`bq_html` is `MIT OR Apache-2.0` with maud's license files). Also: when to remove `publish = false`, and whether internal `version = "0.2.0"` requirements move into `[workspace.dependencies]`.
-2. **`components.css` is broader than the kit's look.** It also styles global `fieldset`, `legend`, `select`, `dialog`, `[popover]`, `.prose` and toasts, so an app cannot take only the button/input look. Proposal: `style/components.css` for kit components only; global element styles in an opt-in `style/elements.css`; `prose.css` opt-in.
+2. ~~**`components.css` is broader than the kit's look.**~~ Done: split into `components.css` (kit only), `elements.css` (global element styles, new `bq.elements` layer below `bq.components`), `prose.css` and `feedback.css`, all opt-in. See the readme's CSS section.
 3. **Class-name collisions.** `.flow`, `.article-layout` and `.prose` merge with app rules of the same name (showroom had to override `grid-column`). Decide whether boutique's primitives get a prefix.
 4. **Error page fallbacks.** If an extractor in the `error_page` render handler fails, its rejection body becomes the page; boutique should fall back to `views::error_page`. Plain-text error bodies (e.g. axum's form deserialisation messages) are no longer shown.
 
@@ -297,6 +297,7 @@ Both apps built their own `icon` and a `<details>` dropdown or menu. Showroom ha
 | Core | `Attrs`, `Setup`, macros, setups runtime, reset/tokens/roles/base CSS | always |
 | UI components | `Button`, `Input`, `Textarea` and their setups (`PasswordToggle`); components upstreamed under 2.3 | Cargo feature `ui` |
 | UI look | component CSS (`button`, `input`, …) | `site.ts` imports `bindings/boutique/style/components.css` |
+| Element, prose and feedback styles | global element defaults; `.prose`; toasts and skeletons | `site.ts` imports `elements.css`, `prose.css` or `feedback.css` |
 
 **Why not a crate:** a sixth crate to publish, and it would need 1.1's `proc-macro-crate` work just to use its own macros.
 
@@ -440,7 +441,7 @@ Core CSS lives in `components/src/style/`; component CSS in `components/src/<nam
 ### 4.1 Cascade layers
 **Status:** Decided
 
-- `components/src/style/index.css` starts with the order statement `@layer bq.reset, bq.tokens, bq.base, bq.components, app;` and then `@import`s the core files.
+- Every entry file (`index.css`, `components.css`, `elements.css`, `prose.css`, `feedback.css`) starts with the order statement `@layer bq.reset, bq.tokens, bq.base, bq.elements, bq.components, app;`, so the order holds whichever is imported first.
 - Each file wraps its own rules in its layer (`@layer bq.reset { … }`, `@layer bq.components { … }`), rather than relying on `@import … layer(…)`, so layering survives any bundler.
 - Document in the readme that app CSS goes in `@layer app` or stays unlayered; either beats every boutique layer.
 
@@ -685,7 +686,7 @@ Only section 1 is affected; sections 2–8 are not.
 2. Expose boutique's files from `bq_components` with `include_str!`, as a static list of `(relative path, contents)`. This covers `components/src/setups.ts`, every component `index.ts` and `index.css`, the `style/` files, and the component Rust sources that `bq_setups` analyses.
 3. `bq_setups` depends on `bq_components` for that list. `Generator::boutique()` analyses the embedded Rust sources instead of reading `../components/src`, and writes the TS and CSS to `<out>/boutique/`, mirroring `components/src` (so `components/src/style/index.css` becomes `<out>/boutique/style/index.css` and `input/index.ts` still imports `../setups`). Use `write_if_changed`.
 4. Generated imports change from `@bq/components/src/…` to relative paths: `registry.ts` and `setups.ts` import `./boutique/setups`, and boutique component setups `./boutique/input/index`. Remove the `runtime` field default of `"@bq/components/src/setups"`.
-5. Provide two CSS entries: `bindings/boutique/style/index.css` (core layers, in order per 4.1) and `bindings/boutique/style/components.css` (UI kit, per 2.5).
+5. Provide CSS entries: `bindings/boutique/style/index.css` (core layers, in order per 4.1), `components.css` (UI kit, per 2.5), and the opt-in `elements.css`, `prose.css` and `feedback.css`.
 
 Resulting `site.ts`:
 

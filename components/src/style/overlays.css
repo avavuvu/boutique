@@ -1,4 +1,4 @@
-@layer bq.components {
+@layer bq.elements {
     dialog,
     [popover] {
         border: var(--border-width) solid var(--color-border);

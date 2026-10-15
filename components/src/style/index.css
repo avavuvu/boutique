@@ -1,4 +1,4 @@
-@layer bq.reset, bq.tokens, bq.base, bq.components, app;
+@layer bq.reset, bq.tokens, bq.base, bq.elements, bq.components, app;
 
 @import "./reset.css";
 @import "./tokens.css";

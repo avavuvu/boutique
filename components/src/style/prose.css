@@ -1,3 +1,5 @@
+@layer bq.reset, bq.tokens, bq.base, bq.elements, bq.components, app;
+
 @layer bq.components {
     .prose {
         --prose-font-body: var(--font-body);

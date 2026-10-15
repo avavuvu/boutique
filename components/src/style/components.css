@@ -1,8 +1,4 @@
-@layer bq.reset, bq.tokens, bq.base, bq.components, app;
+@layer bq.reset, bq.tokens, bq.base, bq.elements, bq.components, app;
 
 @import "../button/index.css";
 @import "../input/index.css";
-@import "./forms.css";
-@import "./overlays.css";
-@import "./prose.css";
-@import "./feedback.css";
