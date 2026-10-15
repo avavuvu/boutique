@@ -13,7 +13,7 @@ use syn::parse::{ParseStream, Parser};
 
 pub use proc_macro2_diagnostics;
 
-pub fn expand(input: TokenStream, krate: TokenStream) -> TokenStream {
+pub fn expand(input: TokenStream, crate_path: TokenStream) -> TokenStream {
     let (setup, input) = setup::split_marker(input);
     let size_hint = input.to_string().len();
 
@@ -38,12 +38,12 @@ pub fn expand(input: TokenStream, krate: TokenStream) -> TokenStream {
     let diag_tokens = diagnostics.into_iter().map(Diagnostic::emit_as_expr_tokens);
 
     let output_ident = Ident::new("__maud_output", Span::mixed_site());
-    let stmts = generate::generate(markups, output_ident.clone(), krate.clone());
+    let stmts = generate::generate(markups, output_ident.clone(), crate_path.clone());
     quote! {{
         extern crate alloc;
         let mut #output_ident = alloc::string::String::with_capacity(#size_hint);
         #stmts
         #(#diag_tokens)*
-        #krate::maud::PreEscaped(#output_ident)
+        #crate_path::maud::PreEscaped(#output_ident)
     }}
 }

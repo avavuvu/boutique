@@ -39,7 +39,7 @@ fn valid_attribute_name(name: &str) -> bool {
             .all(|character| !character.is_whitespace() && !character.is_control() && !"\"'<>/=`".contains(character))
 }
 
-fn krate() -> proc_macro2::TokenStream {
+fn crate_path() -> proc_macro2::TokenStream {
     let ident = |name: &str| Ident::new(name, proc_macro2::Span::call_site());
     match crate_name("bq_components") {
         Ok(FoundCrate::Itself) => quote!(::bq_components),
@@ -59,7 +59,7 @@ fn krate() -> proc_macro2::TokenStream {
 
 #[proc_macro]
 pub fn html(input: TokenStream) -> TokenStream {
-    bq_html::expand(input.into(), krate()).into()
+    bq_html::expand(input.into(), crate_path()).into()
 }
 
 #[proc_macro]
@@ -67,7 +67,7 @@ pub fn attrs(input: TokenStream) -> TokenStream {
     let pairs = parse_macro_input!(input with Punctuated::<AttributePair, Token![,]>::parse_terminated);
     let attrs = proc_macro2::Ident::new("__bq_attrs", proc_macro2::Span::mixed_site());
     let buffer = proc_macro2::Ident::new("__bq_value", proc_macro2::Span::mixed_site());
-    let krate = krate();
+    let crate_path = crate_path();
 
     let mut seen = std::collections::HashSet::new();
     let mut items = Vec::new();
@@ -84,7 +84,7 @@ pub fn attrs(input: TokenStream) -> TokenStream {
         items.push(match &pair.value {
             Some(value) => quote! {{
                 let mut #buffer = ::std::string::String::new();
-                #krate::maud::macro_private::render_to!(&(#value), &mut #buffer);
+                #crate_path::maud::macro_private::render_to!(&(#value), &mut #buffer);
                 #attrs.__text(#name, #buffer);
             }},
             None => quote!(#attrs.__flag(#name);),
@@ -92,7 +92,7 @@ pub fn attrs(input: TokenStream) -> TokenStream {
     }
 
     quote! {{
-        let mut #attrs = #krate::Attrs::new();
+        let mut #attrs = #crate_path::Attrs::new();
         #(#items)*
         #attrs
     }}
@@ -107,8 +107,8 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Err(error) = translate_params(&mut func) {
         return error.to_compile_error().into();
     }
-    let krate = krate();
-    if let Err(error) = attach_setup(&mut func, &options, &krate) {
+    let crate_path = crate_path();
+    if let Err(error) = attach_setup(&mut func, &options, &crate_path) {
         return error.to_compile_error().into();
     }
 
@@ -154,8 +154,8 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     let others_named = named.iter().filter(|p| !matches!(p, GenericParam::Lifetime(_)));
 
     let expanded = quote! {
-        #[#krate::bon::builder(
-            crate = #krate::bon,
+        #[#crate_path::bon::builder(
+            crate = #crate_path::bon,
             builder_type(name = #builder, doc { #(#[doc = #docs])* }),
             state_mod = #state_mod,
             finish_fn = build,
@@ -166,9 +166,9 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
         #alias
 
         impl<#(#lifetimes_named,)* #(#generated,)* #(#others_named,)* __S: #state_mod::IsComplete>
-            #krate::maud::Render for #builder<#(#named_args,)* #(#generated,)* __S>
+            #crate_path::maud::Render for #builder<#(#named_args,)* #(#generated,)* __S>
         {
-            fn render(&self) -> #krate::maud::Markup {
+            fn render(&self) -> #crate_path::maud::Markup {
                 ::core::clone::Clone::clone(self).build()
             }
         }
@@ -177,7 +177,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn attach_setup(func: &mut ItemFn, options: &ComponentOptions, krate: &proc_macro2::TokenStream) -> syn::Result<()> {
+fn attach_setup(func: &mut ItemFn, options: &ComponentOptions, crate_path: &proc_macro2::TokenStream) -> syn::Result<()> {
     let setup = Ident::new("__BqSetup", proc_macro2::Span::call_site());
     if !bq_html::setup::mark(&mut func.block, &setup) {
         let option = options.eager.as_ref().map(Ident::span).or_else(|| options.setup.as_ref().map(LitStr::span));
@@ -196,7 +196,7 @@ fn attach_setup(func: &mut ItemFn, options: &ComponentOptions, krate: &proc_macr
     let name = options.name(&func.sig.ident);
     let declaration: [syn::Stmt; 2] = [
         syn::parse_quote!(#[allow(dead_code)] enum #setup {}),
-        syn::parse_quote!(impl #krate::Setup for #setup { const NAME: &'static str = #name; }),
+        syn::parse_quote!(impl #crate_path::Setup for #setup { const NAME: &'static str = #name; }),
     ];
     func.block.stmts.splice(0..0, declaration);
     Ok(())
