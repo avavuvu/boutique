@@ -1,18 +1,32 @@
 @layer bq.tokens {
     :root {
-        --ink: #000;
-        --paper: #fff;
+        color-scheme: light dark;
+
+        --ink: light-dark(#000, #f2f2f2);
+        --paper: light-dark(#fff, #121212);
         --brand: #0a84ff;
         --font-body: system-ui, sans-serif;
         --font-title: var(--font-body);
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
         --color-surface: var(--paper);
         --color-text: var(--ink);
         --color-border: var(--ink);
         --color-primary: var(--brand);
         --color-on-primary: var(--color-surface);
-        --color-error: #c0392b;
+        --color-error: light-dark(#c0392b, #ff6b5b);
+        --color-on-error: var(--color-surface);
+        --color-success: light-dark(#1e8449, #4cc38a);
         --color-muted: color-mix(in srgb, var(--ink) 33%, var(--paper));
         --color-surface-muted: color-mix(in srgb, var(--ink) 7%, var(--paper));
+        --focus-ring-color: var(--color-primary);
+    }
+
+    [data-theme="light"] {
+        color-scheme: light;
+    }
+
+    [data-theme="dark"] {
+        color-scheme: dark;
     }
 }

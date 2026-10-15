@@ -5,5 +5,48 @@
         --md: 768px;
         --lg: 1024px;
         --xl: 1280px;
+
+        --space-1: 0.25rem;
+        --space-2: 0.5rem;
+        --space-3: 0.75rem;
+        --space-4: 1rem;
+        --space-5: 1.5rem;
+        --space-6: 2rem;
+        --space-7: 3rem;
+        --space-8: 4rem;
+
+        --text-sm: clamp(0.833rem, 0.811rem + 0.112vw, 0.9rem);
+        --text-base: clamp(1rem, 0.958rem + 0.208vw, 1.125rem);
+        --text-lg: clamp(1.2rem, 1.131rem + 0.344vw, 1.406rem);
+        --text-xl: clamp(1.44rem, 1.334rem + 0.53vw, 1.758rem);
+        --text-2xl: clamp(1.728rem, 1.572rem + 0.782vw, 2.197rem);
+        --text-3xl: clamp(2.074rem, 1.849rem + 1.122vw, 2.747rem);
+
+        --radius-1: 0.25rem;
+        --radius-2: 0.5rem;
+        --radius-3: 1rem;
+        --radius-full: 9999px;
+
+        --shadow-1: 0 1px 2px rgb(0 0 0 / 0.08);
+        --shadow-2: 0 2px 8px rgb(0 0 0 / 0.1), 0 1px 2px rgb(0 0 0 / 0.06);
+        --shadow-3: 0 16px 40px rgb(0 0 0 / 0.16), 0 2px 8px rgb(0 0 0 / 0.08);
+
+        --duration-fast: 100ms;
+        --duration: 200ms;
+        --duration-slow: 400ms;
+        --ease-out: cubic-bezier(0.2, 0, 0, 1);
+        --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+        --z-dropdown: 10;
+        --z-sticky: 20;
+        --z-overlay: 30;
+        --z-toast: 40;
+
+        --focus-ring-width: 2px;
+        --focus-ring-offset: 2px;
+
+        --border-width: 1px;
+        --radius: 0;
+        --button-weight: bold;
     }
 }
