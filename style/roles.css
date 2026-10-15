@@ -9,6 +9,7 @@
     --color-text: var(--ink);
     --color-border: var(--ink);
     --color-primary: var(--brand);
+    --color-on-primary: var(--color-surface);
     --color-error: #c0392b;
     --color-muted: color-mix(in srgb, var(--ink) 33%, var(--paper));
     --color-surface-muted: color-mix(in srgb, var(--ink) 7%, var(--paper));

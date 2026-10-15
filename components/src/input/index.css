@@ -31,7 +31,6 @@
         }
 
         &.password button {
-            padding: 0 0.75em;
             border: 0;
             background: none;
             font-size: 0.875em;
@@ -46,8 +45,23 @@
 
         &.prefixed {
             justify-content: center;
-            display: flex;
             align-items: center;
+            gap: 0.5em;
         }
+    }
+
+    & .password-input::-ms-reveal {
+        display: none;
+    }
+
+    & .prefix,
+    & .suffix {
+        color: var(--color-muted);
+        white-space: nowrap;
+    }
+
+    & .hint {
+        color: var(--color-muted);
+        font-size: 0.875em;
     }
 }

@@ -43,6 +43,7 @@
         &:hover {
             background-color: var(--color-primary);
             border-color: var(--color-primary);
+            color: var(--color-on-primary);
         }
     }
 
@@ -52,7 +53,7 @@
 
         &:hover {
             background-color: var(--color-primary);
-            color: var(--color-surface);
+            color: var(--color-on-primary);
         }
     }
 
