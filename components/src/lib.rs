@@ -13,6 +13,8 @@ pub use bq_macros::{attrs, component, html};
 pub use bon;
 pub use maud;
 
+include!(concat!(env!("OUT_DIR"), "/files.rs"));
+
 pub trait Setup {
     const NAME: &'static str;
 }

@@ -17,8 +17,11 @@ use index::Index;
 use on::Target;
 use walk::{Tags, Usage, Walker};
 
+const BOUTIQUE: &str = "boutique";
+const RUNTIME: &str = "./boutique/setups";
+
 struct Root {
-    dir: PathBuf,
+    dir: Option<PathBuf>,
     import: String,
 }
 
@@ -58,31 +61,29 @@ struct MergedRef {
 pub struct Generator {
     out: PathBuf,
     roots: Vec<Root>,
-    runtime: String,
 }
 
 impl Generator {
     pub fn new(out: impl Into<PathBuf>) -> Self {
-        Self { out: out.into(), roots: Vec::new(), runtime: "@bq/components/src/setups".into() }
+        Self { out: out.into(), roots: Vec::new() }
     }
 
     pub fn source(mut self, dir: impl Into<PathBuf>) -> Self {
         let dir = dir.into();
         fs::create_dir_all(&self.out).expect("create the bindings folder");
         let import = relative(&self.out, &dir);
-        self.roots.push(Root { dir, import });
+        self.roots.push(Root { dir: Some(dir), import });
         self
     }
 
     pub fn boutique(mut self) -> Self {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../components/src");
-        self.roots.push(Root { dir, import: "@bq/components/src".into() });
+        self.roots.push(Root { dir: None, import: format!("./{BOUTIQUE}") });
         self
     }
 
     pub fn write(self) {
-        for root in &self.roots {
-            println!("cargo:rerun-if-changed={}", root.dir.display());
+        for dir in self.roots.iter().filter_map(|root| root.dir.as_ref()) {
+            println!("cargo:rerun-if-changed={}", dir.display());
         }
 
         let (types, registry, warnings) = match self.generate() {
@@ -95,6 +96,9 @@ impl Generator {
         }
 
         fs::create_dir_all(&self.out).expect("create the bindings folder");
+        if self.roots.iter().any(|root| root.dir.is_none()) {
+            write_boutique(&self.out.join(BOUTIQUE));
+        }
         write_if_changed(&self.out.join("setups.ts"), &types);
         write_if_changed(&self.out.join("registry.ts"), &registry);
     }
@@ -102,13 +106,26 @@ impl Generator {
     fn generate(&self) -> Result<(String, String, Vec<String>), Vec<String>> {
         let mut sources = Vec::new();
         for (index, root) in self.roots.iter().enumerate() {
+            let Some(dir) = &root.dir else {
+                for (path, text) in bq_components::FILES.iter().filter(|(path, _)| is_rust(path)) {
+                    let folder = Path::new(path).parent().unwrap_or(Path::new(""));
+                    sources.push(Source {
+                        root: index,
+                        name: format!("bq_components/src/{path}"),
+                        import: join_import(&root.import, folder),
+                        text: text.to_string(),
+                    });
+                }
+                continue;
+            };
+
             let mut files = Vec::new();
-            rust_files(&root.dir, &mut files);
+            rust_files(dir, &mut files);
             files.sort();
 
             for file in files {
                 let text = fs::read_to_string(&file).unwrap_or_else(|error| panic!("read {}: {error}", file.display()));
-                let folder = file.parent().unwrap_or(&root.dir).strip_prefix(&root.dir).unwrap_or(Path::new(""));
+                let folder = file.parent().unwrap_or(dir).strip_prefix(dir).unwrap_or(Path::new(""));
                 sources.push(Source {
                     root: index,
                     name: file.display().to_string(),
@@ -117,7 +134,7 @@ impl Generator {
                 });
             }
         }
-        analyse(&self.runtime, &sources)
+        analyse(RUNTIME, &sources)
     }
 }
 
@@ -426,6 +443,40 @@ fn relative(from: &Path, to: &Path) -> String {
         parts.join("/")
     } else {
         format!("./{}", parts.join("/"))
+    }
+}
+
+fn is_rust(path: &str) -> bool {
+    Path::new(path).extension().is_some_and(|extension| extension == "rs")
+}
+
+fn write_boutique(dir: &Path) {
+    let mut keep = BTreeSet::new();
+    for (path, text) in bq_components::FILES.iter().filter(|(path, _)| !is_rust(path)) {
+        let target = dir.join(path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|error| panic!("create {}: {error}", parent.display()));
+        }
+        write_if_changed(&target, text);
+        keep.insert(target);
+    }
+    remove_stale(dir, &keep);
+}
+
+fn remove_stale(dir: &Path, keep: &BTreeSet<PathBuf>) {
+    let entries = fs::read_dir(dir).unwrap_or_else(|error| panic!("read {}: {error}", dir.display()));
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|error| panic!("read {}: {error}", dir.display()));
+        let path = entry.path();
+        let is_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
+        if is_dir {
+            remove_stale(&path, keep);
+            if fs::read_dir(&path).is_ok_and(|mut inside| inside.next().is_none()) {
+                fs::remove_dir(&path).unwrap_or_else(|error| panic!("remove {}: {error}", path.display()));
+            }
+        } else if !keep.contains(&path) {
+            fs::remove_file(&path).unwrap_or_else(|error| panic!("remove {}: {error}", path.display()));
+        }
     }
 }
 
