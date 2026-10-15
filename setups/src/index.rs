@@ -1,21 +1,36 @@
 use std::collections::HashMap;
 
-use bq_html::ast::{Element, Markups};
+use bq_html::{
+    ast::{Element, Markups},
+    setup::{ComponentOptions, mark},
+};
 use heck::ToUpperCamelCase;
-use syn::visit::Visit;
+use proc_macro2::{Ident, Span};
+use syn::{ext::IdentExt, visit::Visit};
 
 use crate::walk::{Flags, html_blocks, parse};
 
 pub struct File {
     pub name: String,
     pub root: usize,
+    pub import: String,
 }
 
 pub struct Function {
+    pub name: String,
     pub file: usize,
     pub component: bool,
+    pub setup: Option<String>,
     pub blocks: Vec<usize>,
     pub bindings: HashMap<String, usize>,
+}
+
+pub struct SetupDeclaration {
+    pub name: String,
+    pub function: String,
+    pub eager: bool,
+    pub file: usize,
+    pub line: usize,
 }
 
 pub struct Block {
@@ -34,12 +49,14 @@ pub struct Index {
     pub blocks: Vec<Block>,
     pub by_name: HashMap<String, Vec<usize>>,
     pub components: HashMap<String, Vec<usize>>,
+    pub setups: Vec<SetupDeclaration>,
+    pub errors: Vec<String>,
 }
 
 impl Index {
-    pub fn add_file(&mut self, name: String, root: usize, parsed: &syn::File) {
+    pub fn add_file(&mut self, name: String, root: usize, import: String, parsed: &syn::File) {
         let file = self.files.len();
-        self.files.push(File { name, root });
+        self.files.push(File { name, root, import });
         let mut collector =
             Collector { index: self, file, local: HashMap::new(), current: None, flags: Flags::default(), binding: None };
         collector.visit_file(parsed);
@@ -47,10 +64,18 @@ impl Index {
 
     fn function(&mut self, file: usize, local: &mut HashMap<String, usize>, item: &syn::ItemFn) -> usize {
         let name = item.sig.ident.to_string();
-        let component = item.attrs.iter().any(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "component"));
+        let attribute = item.attrs.iter().find(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "component"));
+        let component = attribute.is_some();
 
         let index = *local.entry(name.clone()).or_insert_with(|| {
-            self.functions.push(Function { file, component: false, blocks: Vec::new(), bindings: HashMap::new() });
+            self.functions.push(Function {
+                name: name.clone(),
+                file,
+                component: false,
+                setup: None,
+                blocks: Vec::new(),
+                bindings: HashMap::new(),
+            });
             let index = self.functions.len() - 1;
             self.by_name.entry(name.clone()).or_default().push(index);
             index
@@ -61,7 +86,37 @@ impl Index {
             let alias = if name.starts_with(|first: char| first.is_ascii_uppercase()) { name } else { name.to_upper_camel_case() };
             self.components.entry(alias).or_default().push(index);
         }
+        if let Some(attribute) = attribute {
+            self.setup(file, index, item, attribute);
+        }
         index
+    }
+
+    fn setup(&mut self, file: usize, function: usize, item: &syn::ItemFn, attribute: &syn::Attribute) {
+        let line = item.sig.ident.span().start().line;
+        let options = match &attribute.meta {
+            syn::Meta::Path(_) => Ok(ComponentOptions::default()),
+            syn::Meta::List(list) => syn::parse2::<ComponentOptions>(list.tokens.clone()),
+            syn::Meta::NameValue(pair) => Err(syn::Error::new_spanned(pair, "expected #[component] or #[component(..)]")),
+        };
+        let options = options.unwrap_or_else(|error| {
+            self.errors.push(format!("{}:{line}: {error}", self.files[file].name));
+            ComponentOptions::default()
+        });
+
+        let mut block = (*item.block).clone();
+        if !mark(&mut block, &Ident::new("__BqSetup", Span::call_site())) {
+            return;
+        }
+        let name = options.name(&item.sig.ident);
+        self.functions[function].setup.get_or_insert_with(|| name.clone());
+        self.setups.push(SetupDeclaration {
+            name,
+            function: item.sig.ident.unraw().to_string(),
+            eager: options.eager.is_some(),
+            file,
+            line,
+        });
     }
 
     fn block(&mut self, file: usize, function: Option<usize>, tokens: proc_macro2::TokenStream, flags: Flags, binding: Option<String>) {

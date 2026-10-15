@@ -8,7 +8,7 @@ pub use attrs::{AttrValue, Attrs};
 pub use button::{Button, button};
 pub use input::{Input, Kind, Textarea, input, textarea};
 
-pub use bq_macros::{attrs, component, html, setup};
+pub use bq_macros::{attrs, component, html};
 
 pub use bon;
 pub use maud;

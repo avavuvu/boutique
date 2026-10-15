@@ -6,14 +6,12 @@ mod walk;
 mod tests;
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs,
     path::{Component, Path, PathBuf},
 };
 
-use heck::{ToKebabCase, ToLowerCamelCase};
-use proc_macro2::{TokenStream, TokenTree};
-use syn::visit::Visit;
+use heck::{ToLowerCamelCase, ToUpperCamelCase};
 
 use index::Index;
 use on::Target;
@@ -33,6 +31,7 @@ struct Source {
 
 struct Declaration {
     name: String,
+    function: String,
     eager: bool,
     import: String,
     location: String,
@@ -124,7 +123,6 @@ impl Generator {
 
 fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<String>), Vec<String>> {
     let mut index = Index::default();
-    let mut declarations = Vec::new();
     let mut errors = Vec::new();
 
     for source in sources {
@@ -135,43 +133,22 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
                 continue;
             }
         };
-        index.add_file(source.name.clone(), source.root, &parsed);
-        let mut visitor = Declarations { source, declarations: &mut declarations, errors: &mut errors };
-        visitor.visit_file(&parsed);
+        index.add_file(source.name.clone(), source.root, source.import.clone(), &parsed);
     }
+    errors.append(&mut index.errors);
 
-    let mut walker = Walker::new(&index);
-    for (block, html) in index.blocks.iter().enumerate() {
-        let inside = html.function.is_some_and(|function| index.functions[function].component);
-        if !inside && html.binding.is_none() {
-            walker.block(block);
-        }
-    }
-    for (function, item) in index.functions.iter().enumerate() {
-        if item.component && !walker.reached.contains(&function) {
-            walker.component_alone(function);
-        }
-    }
-    let (usages, mut walk_errors, mut warnings) = walker.finish();
+    let (usages, mut walk_errors, mut warnings) = walk(&index);
     errors.append(&mut walk_errors);
 
-    let mut by_name: BTreeMap<String, Declaration> = BTreeMap::new();
-    for declaration in declarations {
-        if let Some(existing) = by_name.get(&declaration.name) {
-            errors.push(format!(
-                "{}: setup!({}) is declared two times, first at {}",
-                declaration.location, declaration.name, existing.location
-            ));
-            continue;
-        }
-        by_name.insert(declaration.name.clone(), declaration);
-    }
-
-    let merged = merge(&usages, &by_name, &mut errors);
+    let by_name = declarations(&index, &mut errors);
+    let merged = merge(&usages, &by_name);
 
     for (name, declaration) in &by_name {
         if !merged.contains_key(name) {
-            warnings.push(format!("{}: setup!({name}) is not used in any bq-setup", declaration.location));
+            warnings.push(format!(
+                "{}: the bare bq-setup of `{}` is not reached by bq_setups, so the setup \"{}\" has no tags, refs or handlers",
+                declaration.location, declaration.function, declaration.name
+            ));
         }
     }
 
@@ -180,6 +157,72 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
     }
 
     Ok((types(runtime, &by_name, &merged), registry(runtime, &by_name, &merged), warnings))
+}
+
+fn walk(index: &Index) -> (Vec<Usage>, Vec<String>, Vec<String>) {
+    let components: Vec<usize> =
+        index.functions.iter().enumerate().filter(|(_, function)| function.component).map(|(function, _)| function).collect();
+
+    let called = {
+        let mut probe = Walker::new(index);
+        walk_blocks(index, &mut probe);
+        for &function in &components {
+            probe.component_alone(function);
+        }
+        probe.reached
+    };
+
+    let mut walker = Walker::new(index);
+    walk_blocks(index, &mut walker);
+    for &function in &components {
+        if !called.contains(&function) {
+            walker.component_alone(function);
+        }
+    }
+    for &function in &components {
+        if called.contains(&function) && !walker.reached.contains(&function) {
+            walker.component_alone(function);
+        }
+    }
+    walker.finish()
+}
+
+fn walk_blocks(index: &Index, walker: &mut Walker) {
+    for (block, html) in index.blocks.iter().enumerate() {
+        let inside = html.function.is_some_and(|function| index.functions[function].component);
+        if !inside && html.binding.is_none() {
+            walker.block(block);
+        }
+    }
+}
+
+fn declarations(index: &Index, errors: &mut Vec<String>) -> BTreeMap<String, Declaration> {
+    let mut by_type: BTreeMap<String, Declaration> = BTreeMap::new();
+    for setup in &index.setups {
+        let file = &index.files[setup.file];
+        let declaration = Declaration {
+            name: setup.name.clone(),
+            function: setup.function.clone(),
+            eager: setup.eager,
+            import: file.import.clone(),
+            location: format!("{}:{}", file.name, setup.line),
+        };
+        let key = setup.name.to_upper_camel_case();
+        if let Some(existing) = by_type.get(&key) {
+            let clash = if existing.name == declaration.name {
+                format!("two setups are named \"{}\"", declaration.name)
+            } else {
+                format!("the setups \"{}\" and \"{}\" both have the TypeScript type {key}", existing.name, declaration.name)
+            };
+            errors.push(format!(
+                "{}: {clash}: `{}` at {} and `{}` at {}; rename one with #[component(setup = \"…\")]",
+                declaration.location, existing.function, existing.location, declaration.function, declaration.location
+            ));
+            continue;
+        }
+        by_type.insert(key, declaration);
+    }
+    by_type
 }
 
 
@@ -240,9 +283,9 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
 fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
     let mut out = format!("import type {{ Registry }} from \"{runtime}\";\nimport type * as setups from \"./setups\";\n");
 
-    for (name, declaration) in declarations {
+    for declaration in declarations.values() {
         if declaration.eager {
-            out.push_str(&format!("import {{ {} }} from \"{}\";\n", name.to_lower_camel_case(), declaration.import));
+            out.push_str(&format!("import {{ {} }} from \"{}\";\n", declaration.name.to_lower_camel_case(), declaration.import));
         }
     }
 
@@ -250,11 +293,11 @@ fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged:
     for (name, declaration) in declarations {
         let empty = Merged::default();
         let setup = merged.get(name).unwrap_or(&empty);
-        let export = name.to_lower_camel_case();
+        let export = declaration.name.to_lower_camel_case();
         let tags = if setup.any { String::new() } else { quoted_list(setup.tags.iter()) };
         let many = quoted_list(setup.refs.iter().filter(|(_, reference)| reference.many).map(|(key, _)| key));
 
-        out.push_str(&format!("    \"{}\": {{\n", name.to_kebab_case()));
+        out.push_str(&format!("    \"{}\": {{\n", declaration.name));
         out.push_str(&format!("        tags: [{tags}],\n"));
         out.push_str(&format!("        many: [{many}],\n"));
         if declaration.eager {
@@ -272,70 +315,14 @@ fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged:
     out
 }
 
-struct Declarations<'a> {
-    source: &'a Source,
-    declarations: &'a mut Vec<Declaration>,
-    errors: &'a mut Vec<String>,
-}
-
-impl<'ast> Visit<'ast> for Declarations<'_> {
-    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
-        if mac.path.segments.last().is_some_and(|segment| segment.ident == "setup") {
-            let line = mac.path.segments.last().map(|segment| segment.ident.span().start().line).unwrap_or(0);
-            let location = format!("{}:{line}", self.source.name);
-            match declaration(mac.tokens.clone()) {
-                Ok((name, eager)) => {
-                    self.declarations.push(Declaration { name, eager, import: self.source.import.clone(), location });
-                }
-                Err(message) => self.errors.push(format!("{location}: {message}")),
-            }
-        }
-        syn::visit::visit_macro(self, mac);
-    }
-}
-
-fn declaration(tokens: TokenStream) -> Result<(String, bool), String> {
-    let tokens: Vec<TokenTree> = tokens.into_iter().collect();
-    let mut index = 0;
-
-    if matches!(tokens.get(index), Some(TokenTree::Ident(ident)) if ident == "pub") {
-        index += 1;
-        if matches!(tokens.get(index), Some(TokenTree::Group(_))) {
-            index += 1;
-        }
-    }
-
-    let Some(TokenTree::Ident(name)) = tokens.get(index) else {
-        return Err("setup!(..) needs a name, for example setup!(ThemeSelect)".into());
-    };
-    index += 1;
-
-    let mut eager = false;
-    if matches!(tokens.get(index), Some(TokenTree::Punct(punct)) if punct.as_char() == ',') {
-        match tokens.get(index + 1) {
-            Some(TokenTree::Ident(option)) if option == "eager" => eager = true,
-            _ => return Err("the only option for setup!(..) is `eager`".into()),
-        }
-        index += 2;
-    }
-
-    if index < tokens.len() {
-        return Err("unexpected tokens in setup!(..)".into());
-    }
-
-    Ok((name.to_string(), eager))
-}
-
-fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>, errors: &mut Vec<String>) -> BTreeMap<String, Merged> {
+fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>) -> BTreeMap<String, Merged> {
+    let types: HashMap<&str, &str> =
+        declarations.iter().map(|(key, declaration)| (declaration.name.as_str(), key.as_str())).collect();
     let mut merged: BTreeMap<String, Merged> = BTreeMap::new();
 
     for usage in usages {
-        if !declarations.contains_key(&usage.name) {
-            errors.push(format!("{}: bq-setup=({}) has no setup!({}) declaration", usage.location, usage.name, usage.name));
-            continue;
-        }
-
-        let setup = merged.entry(usage.name.clone()).or_default();
+        let Some(&key) = types.get(usage.name.as_str()) else { continue };
+        let setup = merged.entry(key.to_string()).or_default();
         setup.usages += 1;
         add_tags(&usage.tags, &mut setup.tags, &mut setup.any);
 

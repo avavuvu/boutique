@@ -1,9 +1,10 @@
-use heck::{ToKebabCase, ToUpperCamelCase};
+use bq_html::setup::ComponentOptions;
+use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use quote::{format_ident, quote};
 use syn::{
-    Expr, GenericParam, Ident, ItemFn, Lifetime, LitStr, Token, Visibility,
+    Expr, GenericParam, Ident, ItemFn, Lifetime, LitStr, Token,
     ext::IdentExt,
     parse::{Parse, ParseStream},
     parse_macro_input,
@@ -98,50 +99,16 @@ pub fn attrs(input: TokenStream) -> TokenStream {
     .into()
 }
 
-struct SetupDeclaration {
-    visibility: Visibility,
-    name: Ident,
-}
-
-impl Parse for SetupDeclaration {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let visibility = input.parse()?;
-        let name = input.parse()?;
-        if input.parse::<Option<Token![,]>>()?.is_some() {
-            let option: Ident = input.parse()?;
-            if option != "eager" {
-                return Err(syn::Error::new(option.span(), "the only option for setup!(..) is `eager`"));
-            }
-        }
-        Ok(Self { visibility, name })
-    }
-}
-
-#[proc_macro]
-pub fn setup(input: TokenStream) -> TokenStream {
-    let SetupDeclaration { visibility, name } = parse_macro_input!(input as SetupDeclaration);
-    let attribute = name.to_string().to_kebab_case();
-    let krate = krate();
-
-    quote! {
-        #visibility enum #name {}
-
-        impl #name {
-            #visibility const NAME: &'static str = #attribute;
-        }
-
-        impl #krate::Setup for #name {
-            const NAME: &'static str = #attribute;
-        }
-    }
-    .into()
-}
-
 /// Turns a function that returns `Markup` into a component.
 #[proc_macro_attribute]
-pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let options = parse_macro_input!(attr as ComponentOptions);
     let mut func = parse_macro_input!(item as ItemFn);
     if let Err(error) = translate_params(&mut func) {
+        return error.to_compile_error().into();
+    }
+    let krate = krate();
+    if let Err(error) = attach_setup(&mut func, &options, &krate) {
         return error.to_compile_error().into();
     }
 
@@ -185,7 +152,6 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let lifetimes_named = named.iter().filter(|p| matches!(p, GenericParam::Lifetime(_)));
     let others_named = named.iter().filter(|p| !matches!(p, GenericParam::Lifetime(_)));
-    let krate = krate();
 
     let expanded = quote! {
         #[#krate::bon::builder(
@@ -209,6 +175,31 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+fn attach_setup(func: &mut ItemFn, options: &ComponentOptions, krate: &proc_macro2::TokenStream) -> syn::Result<()> {
+    let setup = Ident::new("__BqSetup", proc_macro2::Span::call_site());
+    if !bq_html::setup::mark(&mut func.block, &setup) {
+        let option = options.eager.as_ref().map(Ident::span).or_else(|| options.setup.as_ref().map(LitStr::span));
+        return match option {
+            Some(span) => Err(syn::Error::new(
+                span,
+                format!(
+                    "`{}` has no bare `bq-setup`, so it has no setup to configure; add `bq-setup` to the element its setup attaches to",
+                    func.sig.ident.unraw()
+                ),
+            )),
+            None => Ok(()),
+        };
+    }
+
+    let name = options.name(&func.sig.ident);
+    let declaration: [syn::Stmt; 2] = [
+        syn::parse_quote!(#[allow(dead_code)] enum #setup {}),
+        syn::parse_quote!(impl #krate::Setup for #setup { const NAME: &'static str = #name; }),
+    ];
+    func.block.stmts.splice(0..0, declaration);
+    Ok(())
 }
 
 fn is_type(ty: &syn::Type, name: &str) -> bool {

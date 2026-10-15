@@ -1,8 +1,6 @@
 use maud::Markup;
 
-use crate::{Attrs, component, html, setup};
-
-setup!(PasswordToggle);
+use crate::{Attrs, component, html};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Kind {
@@ -71,7 +69,7 @@ fn described_by(id: &str, hint: Option<&str>) -> String {
     }
 }
 
-#[component]
+#[component(setup = "password-toggle")]
 pub fn input(
     #[positional] name: &str,
     id: Option<&str>,
@@ -108,7 +106,7 @@ pub fn input(
                 label for=(id) { (label) }
             }
             @if is_password {
-                div.shell.password bq-setup=(PasswordToggle) {
+                div.shell.password bq-setup {
                     (control)
                     button
                         type="button"

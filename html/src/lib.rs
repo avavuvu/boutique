@@ -3,6 +3,7 @@
 pub mod ast;
 mod escape;
 mod generate;
+pub mod setup;
 
 use ast::DiagnosticParse;
 use proc_macro2::{Ident, Span, TokenStream};
@@ -13,10 +14,11 @@ use syn::parse::{ParseStream, Parser};
 pub use proc_macro2_diagnostics;
 
 pub fn expand(input: TokenStream, krate: TokenStream) -> TokenStream {
+    let (setup, input) = setup::split_marker(input);
     let size_hint = input.to_string().len();
 
     let mut diagnostics = Vec::new();
-    let markups = match Parser::parse2(
+    let mut markups = match Parser::parse2(
         |input: ParseStream| ast::Markups::diagnostic_parse(input, &mut diagnostics),
         input,
     ) {
@@ -32,6 +34,7 @@ pub fn expand(input: TokenStream, krate: TokenStream) -> TokenStream {
         }
     };
 
+    setup::bare(&mut markups, setup.as_ref(), &mut diagnostics);
     let diag_tokens = diagnostics.into_iter().map(Diagnostic::emit_as_expr_tokens);
 
     let output_ident = Ident::new("__maud_output", Span::mixed_site());

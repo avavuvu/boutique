@@ -6,16 +6,16 @@ use std::{
 use bq_html::{
     ast::{
         Attribute, AttributeType, ComponentArg, ControlFlowKind, DiagnosticParse, Element, ElementBody, ElementName, IfOrBlock,
-        Markup, Markups, NoElement,
+        Markup, Markups,
     },
     proc_macro2_diagnostics::Diagnostic,
 };
-use heck::{ToKebabCase, ToLowerCamelCase, ToUpperCamelCase};
+use heck::{ToLowerCamelCase, ToUpperCamelCase};
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::{Expr, Lit, Stmt, parse::Parser, spanned::Spanned, visit::Visit};
 
 use crate::{
-    index::Index,
+    index::{Function, Index},
     on::{self, On, Target},
 };
 
@@ -36,7 +36,6 @@ pub struct Usage {
     pub tags: Tags,
     pub refs: Vec<RefUse>,
     pub handlers: Vec<HandlerUse>,
-    pub location: String,
 }
 
 pub struct HandlerUse {
@@ -100,7 +99,7 @@ struct Cx<'c> {
 
 #[derive(Clone, Default)]
 struct CallAttrs {
-    setups: Vec<(String, String)>,
+    setups: Vec<String>,
     refs: Vec<(RefName, String)>,
     ons: Vec<(On, String)>,
 }
@@ -321,7 +320,7 @@ impl<'a> Walker<'a> {
             }
         };
 
-        let own = self.call_attrs(&element.attrs, &location);
+        let own = self.call_attrs(&element.attrs, &location, cx.function);
         let outside = match cx.frame {
             Some(frame) if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. })) => {
                 frame.attrs_used.set(true);
@@ -337,7 +336,7 @@ impl<'a> Walker<'a> {
     }
 
     fn component<'e>(&mut self, name: &str, element: &'e Element, args: Vec<(String, &'e Expr, Cell<bool>)>, location: &str, cx: &Cx) {
-        let mut outside = vec![Outside { attrs: self.call_attrs(&element.attrs, location), function: cx.function }];
+        let mut outside = vec![Outside { attrs: self.call_attrs(&element.attrs, location, cx.function), function: cx.function }];
         if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. }))
             && let Some(frame) = cx.frame
         {
@@ -403,14 +402,14 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn call_attrs(&mut self, attrs: &[Attribute], location: &str) -> CallAttrs {
+    fn call_attrs(&mut self, attrs: &[Attribute], location: &str, function: Option<usize>) -> CallAttrs {
         let mut call = CallAttrs::default();
         for attr in attrs {
             let Attribute::Named { name, attr_type } = attr else { continue };
             match name.to_string().as_str() {
                 "bq-setup" => {
-                    for setup in self.setup_names(attr_type, location) {
-                        call.setups.push((setup, location.to_string()));
+                    if let Some(setup) = self.setup_name(attr_type, location, function) {
+                        call.setups.push(setup);
                     }
                 }
                 "bq-ref" => {
@@ -471,11 +470,11 @@ impl<'a> Walker<'a> {
         inner
     }
 
-    fn create(&mut self, tags: &Tags, setups: Vec<(String, String)>) -> Vec<usize> {
+    fn create(&mut self, tags: &Tags, setups: Vec<String>) -> Vec<usize> {
         setups
             .into_iter()
-            .map(|(name, location)| {
-                self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), handlers: Vec::new(), location });
+            .map(|name| {
+                self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), handlers: Vec::new() });
                 self.usages.len() - 1
             })
             .collect()
@@ -483,7 +482,7 @@ impl<'a> Walker<'a> {
 
     fn owner(&mut self, setup: Option<&str>, scope: &Scope, text: &str, location: &str, function: Option<usize>) -> Option<usize> {
         if let Some(setup) = setup {
-            let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name.to_kebab_case() == setup);
+            let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name == setup);
             if found.is_none() {
                 let message = format!("{location}: {text} is not inside an element with bq-setup=({})", setup.to_upper_camel_case());
                 self.orphans.push((function, message));
@@ -492,7 +491,7 @@ impl<'a> Walker<'a> {
         }
 
         let nearest = scope.nearest();
-        let mut names: Vec<String> = nearest.iter().map(|&owner| self.usages[owner].name.to_kebab_case()).collect();
+        let mut names: Vec<String> = nearest.iter().map(|&owner| self.usages[owner].name.clone()).collect();
         names.dedup();
         match (nearest.as_slice(), names.as_slice()) {
             ([], _) => {
@@ -564,30 +563,27 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn setup_names(&mut self, value: &AttributeType, location: &str) -> Vec<String> {
-        let message = || format!("{location}: bq-setup needs a name from setup!(..), for example bq-setup=(ThemeSelect)");
-
-        let AttributeType::Normal { value, .. } = value else {
-            self.errors.push(message());
-            return Vec::new();
-        };
-
-        let mut names = Vec::new();
-        let parts: Vec<&Markup<NoElement>> = match value {
-            Markup::Block(block) => block.markups.markups.iter().collect(),
-            other => vec![other],
-        };
-        for part in parts {
-            match part {
-                Markup::Splice { expr, .. } => match path_name(expr) {
-                    Some(name) => names.push(name),
-                    None => self.errors.push(message()),
-                },
-                Markup::Lit(lit) if lit.lit.value().trim().is_empty() => {}
-                _ => self.errors.push(message()),
-            }
+    fn setup_name(&mut self, value: &AttributeType, location: &str, function: Option<usize>) -> Option<String> {
+        if !matches!(value, AttributeType::Empty(None)) {
+            self.errors.push(format!(
+                "{location}: bq-setup does not take a value; write a bare bq-setup inside the #[component] function whose setup it attaches"
+            ));
+            return None;
         }
-        names
+
+        let function = function.map(|function| &self.index.functions[function]);
+        if let Some(Function { setup: Some(name), .. }) = function {
+            return Some(name.clone());
+        }
+        let place = match function {
+            Some(function) if !function.component => format!("in `{}`, which is not a #[component]", function.name),
+            Some(function) => format!("in `{}`, which bq_setups did not recognise as having a setup", function.name),
+            None => "outside a #[component] function".to_string(),
+        };
+        self.errors.push(format!(
+            "{location}: bare bq-setup {place}; bare bq-setup can only be used directly inside a #[component] function, where it attaches that component's setup"
+        ));
+        None
     }
 
     fn ref_names(&mut self, value: &AttributeType, location: &str) -> Vec<RefName> {
@@ -692,12 +688,6 @@ fn called_function(expr: &Expr) -> Option<String> {
     }
 }
 
-fn path_name(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Path(path) if path.qself.is_none() => path.path.segments.last().map(|segment| segment.ident.to_string()),
-        _ => None,
-    }
-}
 
 fn literal_tags(expr: &Expr) -> Tags {
     fn collect(expr: &Expr, out: &mut BTreeSet<String>) -> bool {
