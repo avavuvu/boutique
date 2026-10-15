@@ -16,3 +16,15 @@ Boutique is a framework for integrating server-side rendered Rust apps with Java
       └─ lander/
          ├─ lander.css
          └─ lander.rs
+
+## CSS
+Boutique's CSS uses cascade layers, in this order:
+
+```css
+@layer bq.reset, bq.tokens, bq.base, bq.components, app;
+```
+
+- `style/index.css` is the core: reset, tokens, roles and base defaults.
+- `style/components.css` is the UI kit's look, in `bq.components`. Import it only if you want it.
+
+Put app CSS in `@layer app` or leave it unlayered. Either beats every boutique layer, regardless of specificity, so restyle the kit by overriding tokens or rules rather than copying files.

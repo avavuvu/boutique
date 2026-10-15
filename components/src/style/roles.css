@@ -1,16 +1,18 @@
-:root {
-    --ink: #000;
-    --paper: #fff;
-    --brand: #0a84ff;
-    --font-body: system-ui, sans-serif;
-    --font-title: var(--font-body);
+@layer bq.tokens {
+    :root {
+        --ink: #000;
+        --paper: #fff;
+        --brand: #0a84ff;
+        --font-body: system-ui, sans-serif;
+        --font-title: var(--font-body);
 
-    --color-surface: var(--paper);
-    --color-text: var(--ink);
-    --color-border: var(--ink);
-    --color-primary: var(--brand);
-    --color-on-primary: var(--color-surface);
-    --color-error: #c0392b;
-    --color-muted: color-mix(in srgb, var(--ink) 33%, var(--paper));
-    --color-surface-muted: color-mix(in srgb, var(--ink) 7%, var(--paper));
+        --color-surface: var(--paper);
+        --color-text: var(--ink);
+        --color-border: var(--ink);
+        --color-primary: var(--brand);
+        --color-on-primary: var(--color-surface);
+        --color-error: #c0392b;
+        --color-muted: color-mix(in srgb, var(--ink) 33%, var(--paper));
+        --color-surface-muted: color-mix(in srgb, var(--ink) 7%, var(--paper));
+    }
 }
