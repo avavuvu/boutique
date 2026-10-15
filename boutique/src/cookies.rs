@@ -4,7 +4,6 @@ use time::Duration;
 use crate::config::AuthConfig;
 
 pub const SESSION: &str = "session";
-pub(crate) const LEGACY: [&str; 2] = ["jwt", "refresh"];
 
 fn with_domain(mut cookie: Cookie<'static>, config: &AuthConfig) -> Cookie<'static> {
     if let Some(domain) = &config.cookie_domain {

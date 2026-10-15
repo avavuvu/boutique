@@ -14,28 +14,18 @@ use tower_http::{
     trace::TraceLayer,
 };
 
-use crate::{
-    assets,
-    middleware::{clear_legacy_cookies, cross_origin_protection},
-    state::AuthState,
-    store::AuthUser,
-};
+use crate::{assets, middleware::cross_origin_protection};
 
-pub struct Server<U: AuthUser> {
-    auth: AuthState<U>,
+#[derive(Default)]
+pub struct Server {
     static_dirs: Vec<(String, String)>,
     files: Vec<(String, String)>,
     debug: bool,
 }
 
-impl<U: AuthUser> Server<U> {
-    pub fn new(auth: AuthState<U>) -> Self {
-        Self {
-            auth,
-            static_dirs: Vec::new(),
-            files: Vec::new(),
-            debug: false,
-        }
+impl Server {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn static_dir(mut self, route: impl Into<String>, dir: impl Into<String>) -> Self {
@@ -84,7 +74,6 @@ impl<U: AuthUser> Server<U> {
 
         let router = router
             .fallback_service(fallback)
-            .layer(middleware::from_fn_with_state(self.auth, clear_legacy_cookies::<U>))
             .layer(middleware::from_fn(cross_origin_protection));
 
         let router = if self.debug { router } else { router.layer(middleware::from_fn(https_redirect)) };
