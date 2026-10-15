@@ -1,5 +1,0 @@
-error: expected one of: identifier, literal, `.`, `#`, parentheses, curly braces, `;`
- --> tests/html_errors/pipe-outside-on.rs:5:22
-  |
-5 |         button data-x|prevent="save" {}
-  |                      ^

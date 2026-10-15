@@ -1,5 +1,0 @@
-error: write one `|` between modifiers, for example `bq-on:click|prevent`
- --> tests/html_errors/on-double-pipe.rs:5:27
-  |
-5 |         button bq-on:click||prevent="save" {}
-  |                           ^

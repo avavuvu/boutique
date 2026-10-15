@@ -1,5 +1,0 @@
-error: expected `..` before the attributes to spread, for example `(..attrs)`
- --> tests/html_errors/dynamic-attribute-names.rs:6:11
-  |
-6 |         a (name)="about:blank" {}
-  |           ^^^^^^

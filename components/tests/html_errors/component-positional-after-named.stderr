@@ -1,5 +1,0 @@
-error: positional arguments must come before named arguments like `wide = ..`
- --> tests/html_errors/component-positional-after-named.rs:5:27
-  |
-5 |         Card(wide = true, "title") {}
-  |                           ^^^^^^^

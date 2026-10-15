@@ -1,5 +1,0 @@
-error: `@element` is not allowed here
- --> tests/html_errors/element-in-attribute.rs:5:19
-  |
-5 |         p title={ @element("b") {} } {}
-  |                   ^

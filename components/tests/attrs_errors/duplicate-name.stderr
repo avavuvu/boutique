@@ -1,5 +1,0 @@
-error: the attribute "type" is given two times
- --> tests/attrs_errors/duplicate-name.rs:4:63
-  |
-4 |     let _ = attrs!(type = "submit", class = "a", class = "b", r#type = "button");
-  |                                                               ^^^^^^

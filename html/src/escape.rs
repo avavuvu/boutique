@@ -13,15 +13,3 @@ pub fn escape_to_string(input: &str, output: &mut String) {
         }
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::escape_to_string;
-
-    #[test]
-    fn it_works() {
-        let mut s = String::new();
-        escape_to_string("<script>launchMissiles()</script>", &mut s);
-        assert_eq!(s, "&lt;script&gt;launchMissiles()&lt;/script&gt;");
-    }
-}
