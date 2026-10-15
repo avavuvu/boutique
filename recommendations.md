@@ -11,7 +11,7 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 | 1.1, 1.2, 1.3 | Done |
 | 2.1, 2.2, 2.4, 2.5 | Done |
 | 2.3 | Open |
-| 2.6 | Crossword not migrated |
+| 2.6 | Done: crossword migrated (crossword commits `7576b40`…`9cc2a3f`) |
 | 3.1–3.11 | Done (3.1 has no `.auth(state)`: with the legacy layer gone, `Server` needs no auth) |
 | 4.1, 4.3–4.6 | Done (`.grid` is named `.auto-grid`) |
 | 4.2, 4.7 | Later |
@@ -19,14 +19,20 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 | 5 file structure, 6, 7, 8 | Later |
 | 9.2 | Done except licenses and `publish = false` (see below) |
 | 9.4 | Done |
-| Showroom migration | Done (showroom commits `bf91f7f`…`284b213`) |
+| Showroom migration | Done (showroom commits `bf91f7f`…`284b213`); view CSS colocated and ascii background as a component (`f7288bf`…`4005490`) |
 
 ### Open decisions from implementation
 
 1. **Licenses** for `bq_macros`, `bq_components`, `bq_setups` and `boutique` (`bq_html` is `MIT OR Apache-2.0` with maud's license files). Also: when to remove `publish = false`, and whether internal `version = "0.2.0"` requirements move into `[workspace.dependencies]`.
 2. ~~**`components.css` is broader than the kit's look.**~~ Done: split into `components.css` (kit only), `elements.css` (global element styles, new `bq.elements` layer below `bq.components`), `prose.css` and `feedback.css`, all opt-in. See the readme's CSS section.
 3. **Class-name collisions.** `.flow`, `.article-layout` and `.prose` merge with app rules of the same name (showroom had to override `grid-column`). Decide whether boutique's primitives get a prefix.
-4. **Error page fallbacks.** If an extractor in the `error_page` render handler fails, its rejection body becomes the page; boutique should fall back to `views::error_page`. Plain-text error bodies (e.g. axum's form deserialisation messages) are no longer shown.
+4. **Error page fallbacks.** If an extractor in the `error_page` render handler fails, its rejection body becomes the page; boutique should fall back to `views::error_page`. Plain-text error bodies (e.g. axum's form deserialisation messages) are no longer shown. `.error-page` from `error_content` has no boutique CSS.
+5. **App CSS order under the glob.** Vite hoists eager `import.meta.glob` imports above every explicit import in `site.ts`, so globbed `src/**/*.css` loads before boutique's CSS and before `app.css`, whatever the source order. Consequences:
+   - A globbed file using `@layer app { }` declares `app` before boutique's order statement, making `app` the *lowest* layer, contrary to the readme.
+   - Unlayered app files load in alphabetical path order, so `views/layouts/` comes after `views/dashboard/`; showroom needed a second glob to load layouts first.
+   - The glob also picks up CSS that is not for the site (showroom's `components/email/email.css`, which is `include_str!`ed into emails).
+
+   Options: import boutique's CSS from a separate entry or a `<link>` before `site` so its order statement always comes first; recommend app sub-layers (`@layer app.layouts, app.components, app.views`) declared in a file imported first; or document a fixed glob order and an exclusion convention (e.g. `*.email.css`). Update the `site.ts` example in 9.4 and section 5 once decided.
 
 ### Known rough edges
 
@@ -37,10 +43,17 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 - `UserEntity::PASSWORD_HASH` duplicates `AuthUser::password_hash`.
 - `bq_setups` now compiles `bq_components`, `bq_macros`, `bon` and `maud` for the host as a build dependency.
 - `yoke-derive 0.8.3` in `Cargo.lock` is yanked.
+- `bq_setups` does not walk a let-bound `html!` that is never spliced into another `html!` (e.g. `let row = html! {…}; partial(.., row)`). Its refs and handlers are silently missing from the generated types; crossword split `clue_row` into a function to work around it. Walk such bindings, or warn.
+- The reset's `:where(dialog, [popover]) { margin: auto }` re-centres anchor-positioned popovers; crossword had to restore its menus' margins. Limit it to `dialog` and modal popovers, or document it.
+- `textarea { min-block-size: 4lh }` in `base.css` also hits one-line, content-sized textareas (crossword's clue fields).
+- A `Button` with `href` has the TS tag `"a" | "button"`, so a setup on a link needs narrowing to use `.href`.
+- A component called only through its builder produces `unused import` on the function name, not the alias.
+- `registry.ts` emits one import line per eager setup, even from the same module.
+- `readme.md`'s file tree (`views/lander/lander.rs` + `lander.css`) disagrees with section 5 (`home/mod.rs` + `home.css`).
 
-### Before showroom deploys
+### Before showroom or crossword deploys
 
-- Push boutique and bump showroom's boutique revs (still `7369760`); local builds only work through `.cargo/config.toml`.
+- Push boutique and bump the apps' boutique revs (showroom `7369760`, crossword `8868412`); local builds only work through `.cargo/config.toml`. Crossword's `bun run typecheck` has a pre-existing TS2366 error in `game/reduce/index.ts`.
 - Add a bun buildpack on Heroku; the root `build` script now runs `bun install && bun run build`.
 - Review the visual differences in a browser. The migration report lists them: prose line-height 1.6, focus rings, legend styling, popover transitions, auto-growing textareas, and others. Each is a one-line override.
 - Outstanding password-reset links stop working on deploy (3.11).
@@ -318,6 +331,7 @@ Both apps built their own `icon` and a `<details>` dropdown or menu. Showroom ha
 
 - `crossword-dot-blue/resources/js/site.ts` imports `@bq/components/src/autosave/autosave` and `@bq/components/src/behaviours/behaviours`, which no longer exist.
 - Setups use the old `(card, { progress, signal })` signature; the current runtime calls `(element, refs, context)`.
+- `src/views/account/mod.rs` calls `.entry("editor")`, but crossword's `vite.config.ts` defines no `editor` entry, so the call only logs a warning. It shows the cost of string-named entries (see section 5).
 
 ## 3. Rust API
 
@@ -547,6 +561,7 @@ my-app/
 - `bindings/` is generated by `build.rs` and committed (see 9.4).
 - `public/build/` is gitignored.
 - All `src/**/*.css` is globbed into the `site` entry.
+- Per-page CSS entries (crossword's approach: each view's CSS is its own Vite entry, requested with `head(..).css("edit")`) were considered and rejected for now. String names fail silently (crossword's `.entry("editor")` refers to an entry that does not exist), pages must list the CSS of every partial they render (`lander` asks for `"listing"`), and the saving is small (about 1,100 lines of view CSS per app). Revisit with typed entry handles (3.2) if per-page CSS or JS becomes worthwhile, for example to keep dashboard CSS off showroom's public pages. A `#[view]` macro was considered for the same reason and deferred: with one bundle it adds nothing a glob does not.
 - Update the file structure section of boutique's `readme.md` to match.
 
 ### Bun
