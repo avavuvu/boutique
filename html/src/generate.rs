@@ -191,18 +191,23 @@ impl Generator {
         let (classes, id, named_attrs, spreads) = split_attrs(attrs);
         let mut stmts = vec![quote!(let mut #attrs_ident = #crate_path::Attrs::new();)];
         let mut skip = Vec::new();
+        let private = quote!(#crate_path::__private);
+        let text =
+            |name: &str, value: TokenStream| quote!(#private::text(&mut #attrs_ident, #name, #crate_path::maud::PreEscaped(#value)););
+        let class = |value: TokenStream| quote!(#private::class(&mut #attrs_ident, #crate_path::maud::PreEscaped(#value)););
+        let flag = |name: &str| quote!(#private::flag(&mut #attrs_ident, #name););
 
         if let Some(name) = id {
             skip.push("id".to_string());
             stmts.push(match name {
                 HtmlNameOrMarkup::HtmlName(name) => {
                     let escaped = escaped(&name.to_string());
-                    quote!(#attrs_ident.__text("id", alloc::string::String::from(#escaped));)
+                    text("id", quote!(alloc::string::String::from(#escaped)))
                 }
                 HtmlNameOrMarkup::Markup(markup) => rendered(
                     crate_path,
                     |generator, build| generator.markup(markup, build),
-                    |part| quote!(#attrs_ident.__text("id", #part);),
+                    |part| text("id", quote!(#part)),
                 ),
             });
         }
@@ -211,12 +216,12 @@ impl Generator {
             let push = match name {
                 HtmlNameOrMarkup::HtmlName(name) => {
                     let escaped = escaped(&name.to_string());
-                    quote!(#attrs_ident.__class(#escaped);)
+                    class(quote!(#escaped))
                 }
                 HtmlNameOrMarkup::Markup(markup) => rendered(
                     crate_path,
                     |generator, build| generator.markup(markup, build),
-                    |part| quote!(#attrs_ident.__class(&#part);),
+                    |part| class(quote!(&#part)),
                 ),
             };
             stmts.push(match toggler {
@@ -234,7 +239,7 @@ impl Generator {
                 AttributeType::Normal { value, .. } => rendered(
                     crate_path,
                     |generator, build| generator.markup(value, build),
-                    |part| quote!(#attrs_ident.__text(#name, #part);),
+                    |part| text(&name, quote!(#part)),
                 ),
                 AttributeType::Optional {
                     toggler: Toggler { cond, .. },
@@ -244,19 +249,20 @@ impl Generator {
                     let push = rendered(
                         crate_path,
                         |generator, build| generator.splice(inner_value.clone(), build),
-                        |part| quote!(#attrs_ident.__text(#name, #part);),
+                        |part| text(&name, quote!(#part)),
                     );
                     quote!(if let Some(#inner_value) = (#cond) { #push })
                 }
-                AttributeType::Empty(None) => quote!(#attrs_ident.__flag(#name);),
+                AttributeType::Empty(None) => flag(&name),
                 AttributeType::Empty(Some(Toggler { cond, .. })) => {
-                    quote!(if (#cond) { #attrs_ident.__flag(#name); })
+                    let flag = flag(&name);
+                    quote!(if (#cond) { #flag })
                 }
             });
         }
 
         for expr in spreads {
-            stmts.push(quote!(#attrs_ident.__extend_except(&(#expr), &[#(#skip),*]);));
+            stmts.push(quote!(#private::extend(&mut #attrs_ident, &(#expr), &[#(#skip),*]);));
         }
 
         quote!(#(#stmts)*)
@@ -318,11 +324,12 @@ impl Generator {
     fn attrs(&self, attrs: Vec<Attribute>, build: &mut Builder) {
         if needs_attrs(&attrs) {
             let output_ident = &self.output_ident;
+            let crate_path = &self.crate_path;
             let attrs_ident = Ident::new("__bq_attrs", Span::mixed_site());
             let stmts = self.build_attrs(&attrs_ident, attrs);
             build.push_tokens(quote!({
                 #stmts
-                #attrs_ident.write_to(&mut #output_ident);
+                #crate_path::__private::write(&#attrs_ident, &mut #output_ident);
             }));
             return;
         }

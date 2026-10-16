@@ -48,79 +48,69 @@ impl Attrs {
             maud::Escaper::new(&mut escaped)
                 .write_str(value)
                 .expect("writing to a String cannot fail");
-            self.__text(name, escaped);
+            text(self, name, PreEscaped(escaped));
         }
     }
+}
 
-    #[doc(hidden)]
-    pub fn __flag(&mut self, name: &'static str) {
-        if name == "class" {
-            self.class.get_or_insert_default();
-        } else if !self.has(name) {
-            self.entries.push((name, AttrValue::Flag));
+pub fn flag(attrs: &mut Attrs, name: &'static str) {
+    if name == "class" {
+        attrs.class.get_or_insert_default();
+    } else if !attrs.has(name) {
+        attrs.entries.push((name, AttrValue::Flag));
+    }
+}
+
+pub fn text(attrs: &mut Attrs, name: &'static str, escaped: PreEscaped<String>) {
+    if name == "class" {
+        class(attrs, PreEscaped(&escaped.0));
+        return;
+    }
+    match attrs.entries.iter_mut().find(|(entry, _)| *entry == name) {
+        Some((_, AttrValue::Text(PreEscaped(existing)))) if merges(name) => push_class(existing, &escaped.0),
+        Some(_) => {}
+        None => attrs.entries.push((name, AttrValue::Text(escaped))),
+    }
+}
+
+pub fn class(attrs: &mut Attrs, escaped: PreEscaped<&str>) {
+    if !escaped.0.is_empty() {
+        push_class(attrs.class.get_or_insert_default(), escaped.0);
+    }
+}
+
+pub fn extend(attrs: &mut Attrs, other: &Attrs, skip: &[&str]) {
+    match other.class.as_deref() {
+        Some("") => flag(attrs, "class"),
+        Some(escaped) => class(attrs, PreEscaped(escaped)),
+        None => {}
+    }
+    for (name, value) in &other.entries {
+        match value {
+            AttrValue::Text(escaped) if merges(name) => text(attrs, name, escaped.clone()),
+            _ if !skip.contains(name) && !attrs.has(name) => attrs.entries.push((name, value.clone())),
+            _ => {}
         }
     }
+}
 
-    #[doc(hidden)]
-    pub fn __text(&mut self, name: &'static str, escaped: String) {
-        if name == "class" {
-            self.__class(&escaped);
-            return;
+pub fn write(attrs: &Attrs, out: &mut String) {
+    match attrs.class.as_deref() {
+        Some("") => out.push_str(" class"),
+        Some(class) => {
+            out.push_str(" class=\"");
+            out.push_str(class);
+            out.push('"');
         }
-        match self.entries.iter_mut().find(|(entry, _)| *entry == name) {
-            Some((_, AttrValue::Text(PreEscaped(existing)))) if merges(name) => push_class(existing, &escaped),
-            Some(_) => {}
-            None => self.entries.push((name, AttrValue::Text(PreEscaped(escaped)))),
-        }
+        None => {}
     }
-
-    #[doc(hidden)]
-    pub fn __class(&mut self, escaped: &str) {
-        if !escaped.is_empty() {
-            push_class(self.class.get_or_insert_default(), escaped);
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn __extend(&mut self, other: &Attrs) {
-        self.__extend_except(other, &[]);
-    }
-
-    #[doc(hidden)]
-    pub fn __extend_except(&mut self, other: &Attrs, skip: &[&str]) {
-        match other.class.as_deref() {
-            Some("") => self.__flag("class"),
-            Some(class) => self.__class(class),
-            None => {}
-        }
-        for (name, value) in &other.entries {
-            match value {
-                AttrValue::Text(PreEscaped(text)) if merges(name) => self.__text(name, text.clone()),
-                _ if !skip.contains(name) && !self.has(name) => self.entries.push((name, value.clone())),
-                _ => {}
-            }
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn write_to(&self, out: &mut String) {
-        match self.class.as_deref() {
-            Some("") => out.push_str(" class"),
-            Some(class) => {
-                out.push_str(" class=\"");
-                out.push_str(class);
-                out.push('"');
-            }
-            None => {}
-        }
-        for (name, value) in &self.entries {
-            out.push(' ');
-            out.push_str(name);
-            if let AttrValue::Text(PreEscaped(text)) = value {
-                out.push_str("=\"");
-                out.push_str(text);
-                out.push('"');
-            }
+    for (name, value) in &attrs.entries {
+        out.push(' ');
+        out.push_str(name);
+        if let AttrValue::Text(PreEscaped(text)) = value {
+            out.push_str("=\"");
+            out.push_str(text);
+            out.push('"');
         }
     }
 }

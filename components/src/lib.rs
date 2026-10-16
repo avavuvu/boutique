@@ -21,6 +21,7 @@ include!(concat!(env!("OUT_DIR"), "/files.rs"));
 
 #[doc(hidden)]
 pub mod __private {
+    pub use crate::attrs::{class, extend, flag, text, write};
 
     pub fn tag(name: &'static str) -> &'static str {
         debug_assert!(

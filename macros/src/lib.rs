@@ -89,9 +89,9 @@ pub fn attrs(input: TokenStream) -> TokenStream {
             Some(value) => quote! {{
                 let mut #buffer = ::std::string::String::new();
                 #crate_path::maud::macro_private::render_to!(&(#value), &mut #buffer);
-                #attrs.__text(#name, #buffer);
+                #crate_path::__private::text(&mut #attrs, #name, #crate_path::maud::PreEscaped(#buffer));
             }},
-            None => quote!(#attrs.__flag(#name);),
+            None => quote!(#crate_path::__private::flag(&mut #attrs, #name);),
         });
     }
 
