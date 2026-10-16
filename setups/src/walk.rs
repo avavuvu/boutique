@@ -146,8 +146,11 @@ pub struct Walker<'a> {
     pub warnings: Vec<String>,
     pub reached: HashSet<usize>,
     followed: HashSet<usize>,
-    orphans: Vec<(Option<usize>, String)>,
+    orphans: Vec<(Option<usize>, String, Option<String>)>,
     stack: Vec<usize>,
+    spliced: HashSet<usize>,
+    bound: Vec<usize>,
+    unspliced: Option<(usize, String)>,
 }
 
 impl<'a> Walker<'a> {
@@ -161,6 +164,9 @@ impl<'a> Walker<'a> {
             followed: HashSet::new(),
             orphans: Vec::new(),
             stack: Vec::new(),
+            spliced: HashSet::new(),
+            bound: Vec::new(),
+            unspliced: None,
         }
     }
 
@@ -171,9 +177,15 @@ impl<'a> Walker<'a> {
     }
 
     pub fn finish(mut self) -> (Vec<Usage>, Vec<String>, Vec<String>) {
-        for (function, message) in std::mem::take(&mut self.orphans) {
-            if !function.is_some_and(|function| self.followed.contains(&function)) {
-                self.errors.push(message);
+        for (function, message, binding) in std::mem::take(&mut self.orphans) {
+            if function.is_some_and(|function| self.followed.contains(&function)) {
+                continue;
+            }
+            match binding {
+                Some(binding) => self.warnings.push(format!(
+                    "{message}; it is in `{binding}`, a let-bound html! that is not spliced into another html!, so bq_setups cannot tell which setup it belongs to"
+                )),
+                None => self.errors.push(message),
             }
         }
         (self.usages, unique(self.errors), unique(self.warnings))
@@ -184,6 +196,11 @@ impl<'a> Walker<'a> {
         self.function_blocks(function, &cx);
     }
 
+    pub fn unspliced_alone(&mut self, function: usize) {
+        let cx = Cx { scope: Scope::default(), frame: None, file: self.index.functions[function].file, function: Some(function) };
+        self.unspliced_blocks(function, &cx);
+    }
+
     fn function_blocks(&mut self, function: usize, cx: &Cx) {
         for &block in &self.index.functions[function].blocks {
             let block = &self.index.blocks[block];
@@ -192,6 +209,31 @@ impl<'a> Walker<'a> {
                 self.markups(&block.markups, &Cx { scope, ..cx.clone() });
             }
         }
+        self.unspliced_blocks(function, cx);
+    }
+
+    fn unspliced_blocks(&mut self, function: usize, cx: &Cx) {
+        let index = self.index;
+        for &block in index.functions[function].blocks.iter().rev() {
+            let Some(binding) = &index.blocks[block].binding else { continue };
+            if self.spliced.contains(&block) {
+                continue;
+            }
+            let previous = self.unspliced.replace((function, binding.clone()));
+            self.bound_block(block, cx);
+            self.unspliced = previous;
+        }
+    }
+
+    fn bound_block(&mut self, block: usize, cx: &Cx) {
+        if self.bound.contains(&block) {
+            return;
+        }
+        self.bound.push(block);
+        let html = &self.index.blocks[block];
+        let scope = cx.scope.flagged(html.optional, html.many);
+        self.markups(&html.markups, &Cx { scope, ..cx.clone() });
+        self.bound.pop();
     }
 
     fn location(&self, file: usize, span: Span) -> String {
@@ -286,9 +328,8 @@ impl<'a> Walker<'a> {
             && let Some(function) = cx.function
             && let Some(&block) = self.index.functions[function].bindings.get(&name.to_string())
         {
-            let block = &self.index.blocks[block];
-            let scope = cx.scope.flagged(block.optional, block.many);
-            self.markups(&block.markups, &Cx { scope, ..cx.clone() });
+            self.spliced.insert(block);
+            self.bound_block(block, cx);
             return;
         }
 
@@ -480,12 +521,20 @@ impl<'a> Walker<'a> {
             .collect()
     }
 
+    fn orphan(&mut self, function: Option<usize>, message: String) {
+        let binding = match &self.unspliced {
+            Some((unspliced, binding)) if function == Some(*unspliced) => Some(binding.clone()),
+            _ => None,
+        };
+        self.orphans.push((function, message, binding));
+    }
+
     fn owner(&mut self, setup: Option<&str>, scope: &Scope, text: &str, location: &str, function: Option<usize>) -> Option<usize> {
         if let Some(setup) = setup {
             let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name == setup);
             if found.is_none() {
                 let message = format!("{location}: {text} is not inside an element with bq-setup=({})", setup.to_upper_camel_case());
-                self.orphans.push((function, message));
+                self.orphan(function, message);
             }
             return found.map(|owner| owner.usage);
         }
@@ -495,7 +544,7 @@ impl<'a> Walker<'a> {
         names.dedup();
         match (nearest.as_slice(), names.as_slice()) {
             ([], _) => {
-                self.orphans.push((function, format!("{location}: {text} is not inside an element with bq-setup")));
+                self.orphan(function, format!("{location}: {text} is not inside an element with bq-setup"));
                 None
             }
             ([owner, ..], [_]) => Some(*owner),

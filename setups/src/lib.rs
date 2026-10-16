@@ -211,6 +211,11 @@ fn walk_blocks(index: &Index, walker: &mut Walker) {
             walker.block(block);
         }
     }
+    for (function, item) in index.functions.iter().enumerate() {
+        if !item.component {
+            walker.unspliced_alone(function);
+        }
+    }
 }
 
 fn declarations(index: &Index, errors: &mut Vec<String>) -> BTreeMap<String, Declaration> {

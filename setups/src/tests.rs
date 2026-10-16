@@ -175,6 +175,23 @@ fn markup_in_a_let_binding_is_walked_where_it_is_spliced() {
 }
 
 #[test]
+fn markup_in_a_let_binding_that_is_never_spliced_is_walked() {
+    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+        #[component(setup = "clue")]
+        fn clue_row(as_partial: bool) -> Markup {
+            let row = html! { li bq-setup { (body()) button bq-on:click="save" {} } };
+            if as_partial { partial("#clue", row) } else { row }
+        }
+        fn body() -> Markup {
+            let field = html! { textarea bq-ref="body" {} };
+            field
+        }
+    "##)]);
+    assert_eq!(setup(&types, "Clue"), r#"Setup<"li", { body: "textarea" }, { save: { event: "click"; tag: "button" } }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
 fn prefixed_ref_gets_the_flags_of_its_owner() {
     let (types, ..) = ok(&[(0, "a.rs", r##"
         #[component] fn inner(children: Markup) -> Markup { html! { div bq-setup { (children) } } }
