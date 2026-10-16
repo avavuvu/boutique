@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "A framework for integrating server-side rendered Rust apps with JavaScript"
 
 [features]
@@ -14,7 +15,7 @@ cloudinary = ["dep:reqwest", "dep:sha1", "dep:url"]
 sea-orm = ["dep:sea-orm"]
 
 [dependencies]
-bq_components = { version = "0.2.0", path = "../components", default-features = false }
+bq_components.workspace = true
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["net", "rt", "time"] }
 tower = "0.5"

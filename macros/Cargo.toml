@@ -4,13 +4,14 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 repository.workspace = true
+license.workspace = true
 description = "Procedural macros for boutique: #[component], attrs! and setup!"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-bq_html = { version = "0.2.0", path = "../html" }
+bq_html.workspace = true
 heck = "0.5"
 proc-macro-crate = "3"
 proc-macro2 = "1"

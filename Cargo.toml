@@ -6,4 +6,10 @@ members = ["boutique", "components", "html", "macros", "setups"]
 version = "0.2.0"
 edition = "2024"
 publish = false
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/avavuvu/boutique"
+
+[workspace.dependencies]
+bq_html = { path = "html", version = "0.2.0" }
+bq_macros = { path = "macros", version = "0.2.0" }
+bq_components = { path = "components", version = "0.2.0", default-features = false }
