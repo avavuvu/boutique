@@ -14,7 +14,7 @@ pub enum AttrValue {
 
 #[derive(Clone, Debug, Default)]
 pub struct Attrs {
-    class: String,
+    class: Option<String>,
     entries: Vec<(&'static str, AttrValue)>,
 }
 
@@ -24,18 +24,18 @@ impl Attrs {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.class.is_empty() && self.entries.is_empty()
+        self.class.is_none() && self.entries.is_empty()
     }
 
     pub fn has(&self, name: &str) -> bool {
         if name == "class" {
-            return !self.class.is_empty();
+            return self.class.is_some();
         }
         self.entries.iter().any(|(entry, _)| *entry == name)
     }
 
     pub fn class(&self) -> Option<PreEscaped<&str>> {
-        (!self.class.is_empty()).then_some(PreEscaped(self.class.as_str()))
+        self.class.as_deref().map(PreEscaped)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &AttrValue)> {
@@ -54,7 +54,9 @@ impl Attrs {
 
     #[doc(hidden)]
     pub fn __flag(&mut self, name: &'static str) {
-        if name != "class" && !self.has(name) {
+        if name == "class" {
+            self.class.get_or_insert_default();
+        } else if !self.has(name) {
             self.entries.push((name, AttrValue::Flag));
         }
     }
@@ -73,16 +75,10 @@ impl Attrs {
     }
 
     #[doc(hidden)]
-    pub fn __value(&self, name: &str) -> Option<&str> {
-        self.entries.iter().find_map(|(entry, value)| match value {
-            AttrValue::Text(PreEscaped(text)) if *entry == name => Some(text.as_str()),
-            _ => None,
-        })
-    }
-
-    #[doc(hidden)]
     pub fn __class(&mut self, escaped: &str) {
-        push_class(&mut self.class, escaped);
+        if !escaped.is_empty() {
+            push_class(self.class.get_or_insert_default(), escaped);
+        }
     }
 
     #[doc(hidden)]
@@ -92,21 +88,44 @@ impl Attrs {
 
     #[doc(hidden)]
     pub fn __extend_except(&mut self, other: &Attrs, skip: &[&str]) {
-        self.__class(&other.class);
+        match other.class.as_deref() {
+            Some("") => self.__flag("class"),
+            Some(class) => self.__class(class),
+            None => {}
+        }
         for (name, value) in &other.entries {
-            if skip.contains(name) {
-                continue;
-            }
             match value {
                 AttrValue::Text(PreEscaped(text)) if merges(name) => self.__text(name, text.clone()),
-                _ if !self.has(name) => self.entries.push((name, value.clone())),
+                _ if !skip.contains(name) && !self.has(name) => self.entries.push((name, value.clone())),
                 _ => {}
+            }
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn write_to(&self, out: &mut String) {
+        match self.class.as_deref() {
+            Some("") => out.push_str(" class"),
+            Some(class) => {
+                out.push_str(" class=\"");
+                out.push_str(class);
+                out.push('"');
+            }
+            None => {}
+        }
+        for (name, value) in &self.entries {
+            out.push(' ');
+            out.push_str(name);
+            if let AttrValue::Text(PreEscaped(text)) = value {
+                out.push_str("=\"");
+                out.push_str(text);
+                out.push('"');
             }
         }
     }
 }
 
-pub fn push_class(class: &mut String, escaped: &str) {
+fn push_class(class: &mut String, escaped: &str) {
     if escaped.is_empty() {
         return;
     }
@@ -114,19 +133,4 @@ pub fn push_class(class: &mut String, escaped: &str) {
         class.push(' ');
     }
     class.push_str(escaped);
-}
-
-pub fn write_attrs(out: &mut String, attrs: &Attrs, skip: &[&str]) {
-    for (name, value) in &attrs.entries {
-        if skip.contains(name) {
-            continue;
-        }
-        out.push(' ');
-        out.push_str(name);
-        if let AttrValue::Text(PreEscaped(text)) = value {
-            out.push_str("=\"");
-            out.push_str(text);
-            out.push('"');
-        }
-    }
 }

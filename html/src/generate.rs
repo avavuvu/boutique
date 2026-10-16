@@ -149,7 +149,7 @@ impl Generator {
         let (attrs_stmts, attrs_setter) = if attrs.is_empty() {
             (TokenStream::new(), TokenStream::new())
         } else {
-            let stmts = self.component_attrs(&attrs_ident, attrs);
+            let stmts = self.build_attrs(&attrs_ident, attrs);
             let attrs_method = Ident::new("attrs", span);
             (stmts, quote!(.#attrs_method(#attrs_ident)))
         };
@@ -182,77 +182,74 @@ impl Generator {
         }});
     }
 
-    fn component_attrs(&self, attrs_ident: &Ident, mut attrs: Vec<Attribute>) -> TokenStream {
+    fn build_attrs(&self, attrs_ident: &Ident, mut attrs: Vec<Attribute>) -> TokenStream {
         let crate_path = &self.crate_path;
         setup_attrs(&mut attrs, crate_path);
+        let (classes, id, named_attrs, spreads) = split_attrs(attrs);
         let mut stmts = vec![quote!(let mut #attrs_ident = #crate_path::Attrs::new();)];
         let mut skip = Vec::new();
-        let mut spreads = Vec::new();
 
-        for attr in attrs {
-            match attr {
-                Attribute::Class { name, toggler, .. } => {
-                    let push = match name {
-                        HtmlNameOrMarkup::HtmlName(name) => {
-                            let escaped = escaped(&name.to_string());
-                            quote!(#attrs_ident.__class(#escaped);)
-                        }
-                        HtmlNameOrMarkup::Markup(markup) => rendered(
-                            crate_path,
-                            |generator, build| generator.markup(markup, build),
-                            |part| quote!(#attrs_ident.__class(&#part);),
-                        ),
-                    };
-                    stmts.push(match toggler {
-                        Some(Toggler { cond, .. }) => quote!(if (#cond) { #push }),
-                        None => push,
-                    });
+        if let Some(name) = id {
+            skip.push("id".to_string());
+            stmts.push(match name {
+                HtmlNameOrMarkup::HtmlName(name) => {
+                    let escaped = escaped(&name.to_string());
+                    quote!(#attrs_ident.__text("id", alloc::string::String::from(#escaped));)
                 }
-                Attribute::Id { name, .. } => {
-                    skip.push("id".to_string());
-                    stmts.push(match name {
-                        HtmlNameOrMarkup::HtmlName(name) => {
-                            let escaped = escaped(&name.to_string());
-                            quote!(#attrs_ident.__text("id", alloc::string::String::from(#escaped));)
-                        }
-                        HtmlNameOrMarkup::Markup(markup) => rendered(
-                            crate_path,
-                            |generator, build| generator.markup(markup, build),
-                            |part| quote!(#attrs_ident.__text("id", #part);),
-                        ),
-                    });
+                HtmlNameOrMarkup::Markup(markup) => rendered(
+                    crate_path,
+                    |generator, build| generator.markup(markup, build),
+                    |part| quote!(#attrs_ident.__text("id", #part);),
+                ),
+            });
+        }
+
+        for (name, toggler) in classes {
+            let push = match name {
+                HtmlNameOrMarkup::HtmlName(name) => {
+                    let escaped = escaped(&name.to_string());
+                    quote!(#attrs_ident.__class(#escaped);)
                 }
-                Attribute::Named { name, attr_type } => {
-                    let name = name.to_string();
-                    if name != "class" && !merges(&name) {
-                        skip.push(name.clone());
-                    }
-                    stmts.push(match attr_type {
-                        AttributeType::Normal { value, .. } => rendered(
-                            crate_path,
-                            |generator, build| generator.markup(value, build),
-                            |part| quote!(#attrs_ident.__text(#name, #part);),
-                        ),
-                        AttributeType::Optional {
-                            toggler: Toggler { cond, .. },
-                            ..
-                        } => {
-                            let inner_value: Expr = parse_quote!(inner_value);
-                            let push = rendered(
-                                crate_path,
-                                |generator, build| generator.splice(inner_value.clone(), build),
-                                |part| quote!(#attrs_ident.__text(#name, #part);),
-                            );
-                            quote!(if let Some(#inner_value) = (#cond) { #push })
-                        }
-                        AttributeType::Empty(None) => quote!(#attrs_ident.__flag(#name);),
-                        AttributeType::Empty(Some(Toggler { cond, .. })) => {
-                            quote!(if (#cond) { #attrs_ident.__flag(#name); })
-                        }
-                    });
-                }
-                Attribute::Spread { expr, .. } => spreads.push(expr),
+                HtmlNameOrMarkup::Markup(markup) => rendered(
+                    crate_path,
+                    |generator, build| generator.markup(markup, build),
+                    |part| quote!(#attrs_ident.__class(&#part);),
+                ),
+            };
+            stmts.push(match toggler {
+                Some(cond) => quote!(if (#cond) { #push }),
+                None => push,
+            });
+        }
+
+        for (name, attr_type) in named_attrs {
+            let name = name.to_string();
+            if name != "class" && !merges(&name) {
+                skip.push(name.clone());
             }
+            stmts.push(match attr_type {
+                AttributeType::Normal { value, .. } => rendered(
+                    crate_path,
+                    |generator, build| generator.markup(value, build),
+                    |part| quote!(#attrs_ident.__text(#name, #part);),
+                ),
+                AttributeType::Optional {
+                    toggler: Toggler { cond, .. },
+                    ..
+                } => {
+                    let inner_value: Expr = parse_quote!(inner_value);
+                    let push = rendered(
+                        crate_path,
+                        |generator, build| generator.splice(inner_value.clone(), build),
+                        |part| quote!(#attrs_ident.__text(#name, #part);),
+                    );
+                    quote!(if let Some(#inner_value) = (#cond) { #push })
+                }
+                AttributeType::Empty(None) => quote!(#attrs_ident.__flag(#name);),
+                AttributeType::Empty(Some(Toggler { cond, .. })) => {
+                    quote!(if (#cond) { #attrs_ident.__flag(#name); })
+                }
+            });
         }
 
         for expr in spreads {
@@ -316,23 +313,19 @@ impl Generator {
     }
 
     fn attrs(&self, mut attrs: Vec<Attribute>, build: &mut Builder) {
-        setup_attrs(&mut attrs, &self.crate_path);
-        let (classes, id, named_attrs, spreads) = split_attrs(attrs);
-
-        let class_attrs = named_attrs.iter().filter(|(name, _)| name.to_string() == "class").count();
-        let merged_names: Vec<String> = named_attrs
-            .iter()
-            .map(|(name, _)| name.to_string())
-            .filter(|name| merges(name))
-            .collect();
-        let repeated = merged_names
-            .iter()
-            .enumerate()
-            .any(|(index, name)| merged_names[..index].contains(name));
-        if !spreads.is_empty() || repeated || class_attrs > 1 || (class_attrs == 1 && !classes.is_empty()) {
-            self.attrs_merged(classes, id, named_attrs, spreads, build);
+        if needs_attrs(&attrs) {
+            let output_ident = &self.output_ident;
+            let attrs_ident = Ident::new("__bq_attrs", Span::mixed_site());
+            let stmts = self.build_attrs(&attrs_ident, attrs);
+            build.push_tokens(quote!({
+                #stmts
+                #attrs_ident.write_to(&mut #output_ident);
+            }));
             return;
         }
+
+        setup_attrs(&mut attrs, &self.crate_path);
+        let (classes, id, named_attrs, _) = split_attrs(attrs);
 
         if !classes.is_empty() {
             let mut toggle_class_exprs = vec![];
@@ -377,156 +370,6 @@ impl Generator {
         for (name, attr_type) in named_attrs {
             self.attr(name, attr_type, build);
         }
-    }
-
-    fn attrs_merged(
-        &self,
-        classes: Vec<(HtmlNameOrMarkup, Option<Expr>)>,
-        id: Option<HtmlNameOrMarkup>,
-        named_attrs: Vec<(HtmlName, AttributeType)>,
-        spreads: Vec<Expr>,
-        build: &mut Builder,
-    ) {
-        let output_ident = &self.output_ident;
-        let crate_path = &self.crate_path;
-        let spread = Ident::new("__bq_spread", Span::mixed_site());
-        let class = Ident::new("__bq_class", Span::mixed_site());
-        let spread_class = Ident::new("__bq_spread_class", Span::mixed_site());
-
-        let mut class_parts = Vec::new();
-        for (name, toggler) in classes {
-            let push = match name {
-                HtmlNameOrMarkup::HtmlName(name) => {
-                    let escaped = escaped(&name.to_string());
-                    quote!(#crate_path::__private::push_class(&mut #class, #escaped);)
-                }
-                HtmlNameOrMarkup::Markup(markup) => class_part(crate_path, &class, |generator, build| generator.markup(markup, build)),
-            };
-            class_parts.push(match toggler {
-                Some(cond) => quote!(if (#cond) { #push }),
-                None => push,
-            });
-        }
-
-        let list = Ident::new("__bq_list", Span::mixed_site());
-        let mut groups: Vec<(String, Vec<TokenStream>)> = Vec::new();
-        let mut skip = Vec::new();
-        let mut rest = Vec::new();
-        for (name, attr_type) in named_attrs {
-            let text = name.to_string();
-            if merges(&text)
-                && let AttributeType::Normal { value, .. } = attr_type
-            {
-                let part = class_part(crate_path, &list, |generator, build| generator.markup(value, build));
-                match groups.iter_mut().find(|(group, _)| *group == text) {
-                    Some((_, parts)) => parts.push(part),
-                    None => {
-                        skip.push(text.clone());
-                        rest.push(Rest::Group(groups.len()));
-                        groups.push((text, vec![part]));
-                    }
-                }
-                continue;
-            }
-            if text != "class" {
-                skip.push(text);
-                rest.push(Rest::Attr(name, Box::new(attr_type)));
-                continue;
-            }
-            match attr_type {
-                AttributeType::Normal { value, .. } => {
-                    class_parts.push(class_part(crate_path, &class, |generator, build| generator.markup(value, build)));
-                }
-                AttributeType::Optional {
-                    toggler: Toggler { cond, .. },
-                    ..
-                } => {
-                    let inner_value: Expr = parse_quote!(inner_value);
-                    let push = class_part(crate_path, &class, |generator, build| generator.splice(inner_value.clone(), build));
-                    class_parts.push(quote!(if let Some(#inner_value) = (#cond) { #push }));
-                }
-                AttributeType::Empty(_) => {}
-            }
-        }
-        if id.is_some() {
-            skip.push("id".to_string());
-        }
-
-        let spread_binding = match spreads.as_slice() {
-            [] => None,
-            [expr] => Some(quote!(let #spread: &#crate_path::Attrs = &(#expr);)),
-            _ => {
-                let merged = Ident::new("__bq_merged", Span::mixed_site());
-                Some(quote! {
-                    let mut #merged = #crate_path::Attrs::new();
-                    #(#merged.__extend(&(#spreads));)*
-                    let #spread = &#merged;
-                })
-            }
-        };
-        let spread_class_part = spread_binding.is_some().then(|| {
-            quote! {
-                if let Some(#spread_class) = #spread.class() {
-                    #crate_path::__private::push_class(&mut #class, #spread_class.0);
-                }
-            }
-        });
-
-        let mut inner = self.builder();
-        inner.push_tokens(quote! {
-            #spread_binding
-            let mut #class = alloc::string::String::new();
-            #(#class_parts)*
-            #spread_class_part
-            if !#class.is_empty() {
-                #output_ident.push_str(" class=\"");
-                #output_ident.push_str(&#class);
-                #output_ident.push_str("\"");
-            }
-        });
-
-        if let Some(id) = id {
-            inner.push_str(" ");
-            self.name(parse_quote!(id), &mut inner);
-            inner.push_str("=\"");
-            self.name_or_markup(id, &mut inner);
-            inner.push_str("\"");
-        }
-
-        let spread_list = Ident::new("__bq_spread_list", Span::mixed_site());
-        for item in rest {
-            match item {
-                Rest::Attr(name, attr_type) => self.attr(name, *attr_type, &mut inner),
-                Rest::Group(index) => {
-                    let (name, parts) = &groups[index];
-                    let open = format!(" {}=\"", escaped(name));
-                    let spread_part = spread_binding.is_some().then(|| {
-                        quote! {
-                            if let Some(#spread_list) = #spread.__value(#name) {
-                                #crate_path::__private::push_class(&mut #list, #spread_list);
-                            }
-                        }
-                    });
-                    inner.push_tokens(quote! {{
-                        let mut #list = alloc::string::String::new();
-                        #(#parts)*
-                        #spread_part
-                        #output_ident.push_str(#open);
-                        #output_ident.push_str(&#list);
-                        #output_ident.push_str("\"");
-                    }});
-                }
-            }
-        }
-
-        if spread_binding.is_some() {
-            inner.push_tokens(quote! {
-                #crate_path::__private::write_attrs(&mut #output_ident, #spread, &[#(#skip),*]);
-            });
-        }
-
-        let inner = inner.finish();
-        build.push_tokens(quote!({ #inner }));
     }
 
     fn control_flow<E: Into<Element>>(&self, control_flow: ControlFlow<E>, build: &mut Builder) {
@@ -638,13 +481,23 @@ impl Generator {
 
 ////////////////////////////////////////////////////////
 
-enum Rest {
-    Attr(HtmlName, Box<AttributeType>),
-    Group(usize),
-}
-
 fn merges(name: &str) -> bool {
     name == "bq-setup" || name == "bq-ref" || name.starts_with("bq-on:")
+}
+
+fn needs_attrs(attrs: &[Attribute]) -> bool {
+    let mut names = Vec::new();
+    let mut dotted = false;
+    for attr in attrs {
+        match attr {
+            Attribute::Spread { .. } => return true,
+            Attribute::Class { .. } => dotted = true,
+            Attribute::Id { .. } => names.push("id".to_string()),
+            Attribute::Named { name, .. } => names.push(name.to_string()),
+        }
+    }
+    let repeated = names.iter().enumerate().any(|(index, name)| names[..index].contains(name));
+    repeated || (dotted && names.iter().any(|name| name == "class"))
 }
 
 fn setup_attrs(attrs: &mut [Attribute], crate_path: &TokenStream) {
@@ -698,14 +551,6 @@ fn rendered(
         #body
         #then
     }}
-}
-
-fn class_part(crate_path: &TokenStream, class: &Ident, write: impl FnOnce(&Generator, &mut Builder)) -> TokenStream {
-    rendered(
-        crate_path,
-        write,
-        |part| quote!(#crate_path::__private::push_class(&mut #class, &#part);),
-    )
 }
 
 fn component_function(path: &Path) -> Path {
