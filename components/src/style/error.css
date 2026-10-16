@@ -1,0 +1,32 @@
+@layer bq.components {
+    .error-page {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-4);
+        max-inline-size: 60ch;
+        margin-inline: auto;
+        padding: var(--space-7) var(--space-4);
+
+        & h1 {
+            font-family: var(--font-title);
+            font-size: var(--text-2xl);
+            font-weight: bold;
+        }
+
+        & ul {
+            padding-inline-start: var(--space-5);
+            list-style-type: disc;
+        }
+
+        & li + li {
+            margin-block-start: var(--space-1);
+        }
+
+        & a {
+            color: var(--color-primary);
+            text-decoration: underline;
+            text-underline-offset: 0.15em;
+        }
+    }
+}
