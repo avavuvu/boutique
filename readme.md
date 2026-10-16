@@ -2,20 +2,59 @@
 Boutique is a framework for integrating server-side rendered Rust apps with Javascript.
 
 ## File structure
-├─ public/
-│  └─ robots.txt
-└─ src/
-   ├─ components/
-   │  └─ button/
-   │     ├─ index.css
-   │     ├─ index.ts
-   │     └─ mod.rs
-   ├─ handlers/
-   ├─ models/
-   └─ views/
-      └─ lander/
-         ├─ lander.css
-         └─ lander.rs
+```
+my-app/
+├─ Cargo.toml
+├─ package.json
+├─ .bun-version
+├─ .env.example
+├─ .cargo/config.toml.example
+├─ Procfile
+├─ migration/
+│  └─ src/
+│     ├─ lib.rs
+│     ├─ main.rs
+│     └─ m00000000_000001_users_and_sessions.rs
+└─ web/
+   ├─ Cargo.toml
+   ├─ build.rs
+   ├─ package.json
+   ├─ tsconfig.json
+   ├─ vite.config.ts
+   ├─ bindings/
+   │  ├─ setups.ts
+   │  ├─ registry.ts
+   │  └─ boutique/
+   ├─ public/
+   │  ├─ favicon.ico
+   │  ├─ robots.txt
+   │  └─ build/
+   ├─ resources/
+   │  ├─ js/site.ts
+   │  ├─ css/app.css
+   │  ├─ css/theme.css
+   │  └─ fonts/
+   └─ src/
+      ├─ main.rs
+      ├─ config.rs
+      ├─ state.rs
+      ├─ router.rs
+      ├─ handlers/
+      ├─ models/
+      ├─ services/
+      ├─ views/
+      │  ├─ mod.rs
+      │  ├─ layouts/mod.rs
+      │  └─ home/
+      │     ├─ mod.rs
+      │     └─ home.css
+      └─ components/
+         ├─ mod.rs
+         └─ counter/
+            ├─ mod.rs
+            ├─ index.ts
+            └─ index.css
+```
 
 ## UI kit
 `Button`, `Input` and `Textarea`, with the `password-toggle` setup, are behind boutique's `ui` feature, which is on by default. Depend on `boutique` with `default-features = false` to leave them out.
