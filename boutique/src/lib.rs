@@ -25,7 +25,7 @@ pub use maud;
 pub use validator;
 
 pub use auth::{
-    AuthConfig, AuthRejection, AuthState, AuthStore, AuthUser, AuthenticatedUser, NewSession, StoreError, password, reset, session,
+    AuthConfig, AuthRejection, AuthState, AuthStore, AuthUser, AuthenticatedUser, HasAuth, NewSession, StoreError, password, reset, session,
 };
 pub use axum_extra::extract::cookie::CookieJar;
 pub use error::{AppError, AppResult, ErrorMessage, ErrorReport};

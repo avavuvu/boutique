@@ -23,8 +23,6 @@ pub(crate) struct User {
 pub(crate) struct Store(pub(crate) Arc<Mutex<Vec<User>>>);
 
 impl AuthUser for User {
-    type Store = Store;
-
     fn id(&self) -> &str {
         &self.id
     }
@@ -34,7 +32,8 @@ impl AuthUser for User {
     }
 }
 
-impl AuthStore<User> for Store {
+impl AuthStore for Store {
+    type User = User;
     type Error = Infallible;
 
     async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, Infallible> {
@@ -86,6 +85,6 @@ pub(crate) fn user(id: &str) -> User {
     }
 }
 
-pub(crate) fn state() -> AuthState<User> {
+pub(crate) fn state() -> AuthState<Store> {
     AuthState::new(Store(Arc::new(Mutex::new(vec![user("alice"), user("bob")]))), "secret")
 }

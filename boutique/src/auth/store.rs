@@ -3,8 +3,6 @@ use std::{error::Error, fmt, future::Future};
 use chrono::{DateTime, Utc};
 
 pub trait AuthUser: Clone + Send + Sync + 'static {
-    type Store: AuthStore<Self>;
-
     fn id(&self) -> &str;
     fn password_hash(&self) -> &str;
 }
@@ -16,16 +14,21 @@ pub struct NewSession {
     pub expires_at: DateTime<Utc>,
 }
 
-pub trait AuthStore<U>: Clone + Send + Sync + 'static {
+pub trait AuthStore: Clone + Send + Sync + 'static {
+    type User: AuthUser;
     type Error: Error + Send + Sync + 'static;
 
-    fn find_user_by_email(&self, email: &str) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+    fn find_user_by_email(&self, email: &str) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
-    fn find_user_by_id(&self, id: &str) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+    fn find_user_by_id(&self, id: &str) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
     fn create_session(&self, session: NewSession) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn find_session_user(&self, token_hash: &str, now: DateTime<Utc>) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+    fn find_session_user(
+        &self,
+        token_hash: &str,
+        now: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Option<Self::User>, Self::Error>> + Send;
 
     fn delete_session(&self, token_hash: &str) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
@@ -33,7 +36,7 @@ pub trait AuthStore<U>: Clone + Send + Sync + 'static {
 
     fn delete_expired_sessions(&self, now: DateTime<Utc>) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn reset_password(&self, user: U, password_hash: String) -> impl Future<Output = Result<U, Self::Error>> + Send;
+    fn reset_password(&self, user: Self::User, password_hash: String) -> impl Future<Output = Result<Self::User, Self::Error>> + Send;
 }
 
 #[derive(Debug)]

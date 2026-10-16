@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use axum::{
-    extract::{FromRef, FromRequestParts, OptionalFromRequestParts},
+    extract::{FromRequestParts, OptionalFromRequestParts},
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Redirect, Response},
 };
@@ -15,6 +15,20 @@ use super::{
 use crate::{error::AppError, htmx};
 
 pub struct AuthenticatedUser<U: AuthUser>(pub U);
+
+pub trait HasAuth: Send + Sync {
+    type Store: AuthStore;
+
+    fn auth(&self) -> &AuthState<Self::Store>;
+}
+
+impl<S: AuthStore> HasAuth for AuthState<S> {
+    type Store = S;
+
+    fn auth(&self) -> &AuthState<S> {
+        self
+    }
+}
 
 #[derive(Debug)]
 pub enum AuthRejection {
@@ -68,8 +82,8 @@ impl From<AuthRejection> for AppError {
 #[derive(Clone)]
 struct Resolved<U>(Option<U>);
 
-async fn resolve<U: AuthUser>(parts: &mut Parts, auth: &AuthState<U>) -> Result<Option<U>, AuthRejection> {
-    if let Some(Resolved(user)) = parts.extensions.get::<Resolved<U>>() {
+async fn resolve<S: AuthStore>(parts: &mut Parts, auth: &AuthState<S>) -> Result<Option<S::User>, AuthRejection> {
+    if let Some(Resolved(user)) = parts.extensions.get::<Resolved<S::User>>() {
         return Ok(user.clone());
     }
 
@@ -91,15 +105,15 @@ async fn resolve<U: AuthUser>(parts: &mut Parts, auth: &AuthState<U>) -> Result<
 
 impl<St, U> FromRequestParts<St> for AuthenticatedUser<U>
 where
-    St: Send + Sync,
+    St: HasAuth,
+    St::Store: AuthStore<User = U>,
     U: AuthUser,
-    AuthState<U>: FromRef<St>,
 {
     type Rejection = AuthRejection;
 
     async fn from_request_parts(parts: &mut Parts, state: &St) -> Result<Self, Self::Rejection> {
-        let auth = AuthState::<U>::from_ref(state);
-        resolve(parts, &auth)
+        let auth = state.auth();
+        resolve(parts, auth)
             .await?
             .map(AuthenticatedUser)
             .ok_or_else(|| AuthRejection::Unauthenticated {
@@ -111,14 +125,13 @@ where
 
 impl<St, U> OptionalFromRequestParts<St> for AuthenticatedUser<U>
 where
-    St: Send + Sync,
+    St: HasAuth,
+    St::Store: AuthStore<User = U>,
     U: AuthUser,
-    AuthState<U>: FromRef<St>,
 {
     type Rejection = AuthRejection;
 
     async fn from_request_parts(parts: &mut Parts, state: &St) -> Result<Option<Self>, Self::Rejection> {
-        let auth = AuthState::<U>::from_ref(state);
-        Ok(resolve(parts, &auth).await?.map(AuthenticatedUser))
+        Ok(resolve(parts, state.auth()).await?.map(AuthenticatedUser))
     }
 }

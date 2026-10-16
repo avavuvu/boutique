@@ -70,7 +70,7 @@ fn mac(secret: &[u8], user_id: &str, expires: i64, password_hash: &str) -> Hmac<
 
 /// returns `None` for an unknown email. callers must show the same message
 /// either way so the endpoint does not reveal which emails have accounts.
-pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<Option<(U, String)>, ResetError> {
+pub async fn request<S: AuthStore>(state: &AuthState<S>, email: &str) -> Result<Option<(S::User, String)>, ResetError> {
     let Some(user) = state.store.find_user_by_email(email).await.map_err(StoreError::new)? else {
         return Ok(None);
     };
@@ -79,7 +79,7 @@ pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<O
     Ok(Some((user, token)))
 }
 
-pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> String {
+pub fn token_for<S: AuthStore>(state: &AuthState<S>, user: &S::User) -> String {
     let expires = expiry(Utc::now(), state.config.reset_ttl).timestamp();
     let signature = mac(state.secret(), user.id(), expires, user.password_hash())
         .finalize()
@@ -87,7 +87,7 @@ pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> String {
     format!("{}.{expires}.{}", hex::encode(user.id().as_bytes()), hex::encode(&signature))
 }
 
-pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Result<U, ResetError> {
+pub async fn verify_token<S: AuthStore>(state: &AuthState<S>, token: &str) -> Result<S::User, ResetError> {
     let mut parts = token.split('.');
     let (Some(user_id), Some(expires), Some(signature), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
         return Err(ResetError::InvalidToken);
@@ -117,7 +117,7 @@ pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Res
     Ok(user)
 }
 
-pub async fn complete<U: AuthUser>(state: &AuthState<U>, token: &str, new_password: &str) -> Result<U, ResetError> {
+pub async fn complete<S: AuthStore>(state: &AuthState<S>, token: &str, new_password: &str) -> Result<S::User, ResetError> {
     let user = verify_token(state, token).await?;
     let hash = password::hash(new_password).map_err(ResetError::Hash)?;
 
@@ -131,10 +131,10 @@ mod tests {
     use super::*;
     use crate::auth::{
         AuthConfig,
-        testing::{User, block_on, state, user},
+        testing::{Store, User, block_on, state, user},
     };
 
-    fn verify(state: &AuthState<User>, token: &str) -> Result<User, ResetError> {
+    fn verify(state: &AuthState<Store>, token: &str) -> Result<User, ResetError> {
         block_on(verify_token(state, token))
     }
 

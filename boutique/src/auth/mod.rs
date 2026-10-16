@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
-pub use extract::{AuthRejection, AuthenticatedUser};
+pub use extract::{AuthRejection, AuthenticatedUser, HasAuth};
 pub use store::{AuthStore, AuthUser, NewSession, StoreError};
 
 const HOUR: Duration = Duration::from_secs(60 * 60);
@@ -80,14 +80,14 @@ fn expiry(from: DateTime<Utc>, ttl: Duration) -> DateTime<Utc> {
 }
 
 #[derive(Clone)]
-pub struct AuthState<U: AuthUser> {
-    store: U::Store,
+pub struct AuthState<S: AuthStore> {
+    store: S,
     secret: String,
     config: AuthConfig,
 }
 
-impl<U: AuthUser> AuthState<U> {
-    pub fn new(store: U::Store, secret: impl Into<String>) -> Self {
+impl<S: AuthStore> AuthState<S> {
+    pub fn new(store: S, secret: impl Into<String>) -> Self {
         Self {
             store,
             secret: secret.into(),

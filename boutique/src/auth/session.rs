@@ -61,13 +61,13 @@ impl IntoResponseParts for Session {
     }
 }
 
-pub async fn login<U: AuthUser>(state: &AuthState<U>, email: &str, plain_password: &str) -> Result<(U, Session), LoginError> {
+pub async fn login<S: AuthStore>(state: &AuthState<S>, email: &str, plain_password: &str) -> Result<(S::User, Session), LoginError> {
     let user = authenticate(state, email, plain_password).await?;
     let session = issue(state, &user).await?;
     Ok((user, session))
 }
 
-pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_password: &str) -> Result<U, LoginError> {
+pub async fn authenticate<S: AuthStore>(state: &AuthState<S>, email: &str, plain_password: &str) -> Result<S::User, LoginError> {
     let user = state.store.find_user_by_email(email).await.map_err(StoreError::new)?;
 
     match user {
@@ -76,7 +76,7 @@ pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_
     }
 }
 
-pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Session, StoreError> {
+pub async fn issue<S: AuthStore>(state: &AuthState<S>, user: &S::User) -> Result<Session, StoreError> {
     let now = Utc::now();
     let token = ids::random_hex(32);
     let ttl = state.config.session_ttl;
@@ -96,7 +96,7 @@ pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Sessio
     ))))
 }
 
-pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Session {
+pub async fn revoke<S: AuthStore>(state: &AuthState<S>, jar: CookieJar) -> Session {
     if let Some(cookie) = jar.get(cookies::SESSION) {
         let token_hash = token_hash(cookie.value());
         if let Err(error) = state.store.delete_session(&token_hash).await {
@@ -107,11 +107,11 @@ pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Sessio
     Session(jar.remove(cookies::remove(cookies::SESSION, &state.config)))
 }
 
-pub async fn revoke_all<U: AuthUser>(state: &AuthState<U>, user_id: &str) -> Result<(), StoreError> {
+pub async fn revoke_all<S: AuthStore>(state: &AuthState<S>, user_id: &str) -> Result<(), StoreError> {
     state.store.delete_user_sessions(user_id).await.map_err(StoreError::new)
 }
 
-pub fn spawn_cleanup<U: AuthUser>(state: AuthState<U>, interval: Duration) -> tokio::task::JoinHandle<()> {
+pub fn spawn_cleanup<S: AuthStore>(state: AuthState<S>, interval: Duration) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

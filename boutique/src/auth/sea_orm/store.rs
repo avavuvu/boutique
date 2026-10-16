@@ -7,7 +7,7 @@ use sea_orm::{
 };
 
 use crate::{
-    auth::store::{AuthStore, NewSession},
+    auth::store::{AuthStore, AuthUser, NewSession},
     error::AppError,
 };
 
@@ -47,15 +47,16 @@ impl<U, S> Clone for SeaOrmStore<U, S> {
     }
 }
 
-impl<U, S> AuthStore<U::Model> for SeaOrmStore<U, S>
+impl<U, S> AuthStore for SeaOrmStore<U, S>
 where
     U: UserEntity,
     S: SessionEntity,
-    U::Model: IntoActiveModel<U::ActiveModel> + Sync,
+    U::Model: AuthUser + IntoActiveModel<U::ActiveModel>,
     U::ActiveModel: Send,
     S::Model: IntoActiveModel<S::ActiveModel>,
     S::ActiveModel: Send,
 {
+    type User = U::Model;
     type Error = DbErr;
 
     async fn find_user_by_email(&self, email: &str) -> Result<Option<U::Model>, DbErr> {
