@@ -1,20 +1,26 @@
 mod index;
 mod on;
+mod sources;
 mod walk;
 
+#[cfg(test)]
+mod testing;
 #[cfg(test)]
 mod tests;
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use heck::{ToLowerCamelCase, ToUpperCamelCase};
 
 use index::Index;
 use on::Target;
+use sources::{join_import, module_path, rust_files};
+#[cfg(test)]
+use testing::{Source, analyse};
 use walk::{Tags, Usage, Walked, Walker};
 
 const BOUTIQUE: &str = "boutique";
@@ -24,13 +30,6 @@ const RUNTIME_FILE: &str = "setups.ts";
 struct Root {
     dir: Option<PathBuf>,
     import: String,
-}
-
-struct Source {
-    root: usize,
-    name: String,
-    import: String,
-    text: String,
 }
 
 struct Declaration {
@@ -112,13 +111,16 @@ impl Generator {
 
     fn generate(&self) -> Result<(String, String, Vec<String>), Vec<String>> {
         let mut sources = Vec::new();
+        let mut embedded = None;
         for (index, root) in self.roots.iter().enumerate() {
             let Some(dir) = &root.dir else {
+                embedded = Some(index);
                 for (path, text) in bq_components::FILES.iter().filter(|(path, _)| is_rust(path)) {
                     let folder = Path::new(path).parent().unwrap_or(Path::new(""));
-                    sources.push(Source {
+                    sources.push(sources::Source {
                         root: index,
                         name: format!("bq_components/src/{path}"),
+                        module: module_path(Path::new(path)),
                         import: join_import(&root.import, folder),
                         text: text.to_string(),
                     });
@@ -133,20 +135,25 @@ impl Generator {
             for file in files {
                 let text = fs::read_to_string(&file).unwrap_or_else(|error| panic!("read {}: {error}", file.display()));
                 let folder = file.parent().unwrap_or(dir).strip_prefix(dir).unwrap_or(Path::new(""));
-                sources.push(Source {
+                sources.push(sources::Source {
                     root: index,
                     name: file.display().to_string(),
+                    module: module_path(file.strip_prefix(dir).unwrap_or(&file)),
                     import: join_import(&root.import, folder),
                     text,
                 });
             }
         }
-        analyse(RUNTIME, &sources)
+        analyse_sources(RUNTIME, &sources, embedded)
     }
 }
 
-fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<String>), Vec<String>> {
-    let mut index = Index::default();
+fn analyse_sources(
+    runtime: &str,
+    sources: &[sources::Source],
+    embedded: Option<usize>,
+) -> Result<(String, String, Vec<String>), Vec<String>> {
+    let mut index = Index::new(embedded);
     let mut errors = Vec::new();
 
     for source in sources {
@@ -157,7 +164,13 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
                 continue;
             }
         };
-        index.add_file(source.name.clone(), source.root, source.import.clone(), &parsed);
+        index.add_file(
+            source.name.clone(),
+            source.root,
+            source.module.clone(),
+            source.import.clone(),
+            &parsed,
+        );
     }
     errors.append(&mut index.errors);
 
@@ -436,32 +449,6 @@ fn tag_union(tags: &BTreeSet<String>, any: bool) -> String {
 
 fn quoted_list<'a>(items: impl Iterator<Item = &'a String>) -> String {
     items.map(|item| format!("\"{item}\"")).collect::<Vec<_>>().join(", ")
-}
-
-fn join_import(base: &str, folder: &Path) -> String {
-    let mut import = base.trim_end_matches('/').to_string();
-    for part in folder.components() {
-        if let Component::Normal(part) = part {
-            import.push('/');
-            import.push_str(&part.to_string_lossy());
-        }
-    }
-    import.push_str("/index");
-    import
-}
-
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        panic!("read {}", dir.display());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            rust_files(&path, out);
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            out.push(path);
-        }
-    }
 }
 
 fn relative(from: &Path, to: &Path) -> String {

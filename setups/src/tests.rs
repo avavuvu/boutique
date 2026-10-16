@@ -524,7 +524,7 @@ fn component_path_uses_the_last_segment() {
         "##,
         ),
     ]);
-    assert_eq!(setup(&types, "Collapse"), r#"Setup<"section">"#);
+    assert_eq!(setup(&types, "Collapse"), "Setup<string>");
 }
 
 #[test]
@@ -953,4 +953,25 @@ fn wrong_prefix_in_a_helper_called_inside_a_setup_is_an_error() {
         errors[0].starts_with(r#"a.rs:4: bq-ref="toolbar.link" names the setup "toolbar", but no #[component] has that setup"#),
         "{errors:?}"
     );
+}
+
+#[test]
+fn typed_let_bindings_and_impl_method_helpers_are_followed() {
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
+        #[component(setup = "card")]
+        fn view() -> Markup {
+            let title: Markup = html! { h2 bq-ref="title" {} };
+            html! { section bq-setup { (title) (Row::render()) } }
+        }
+        struct Row;
+        impl Row {
+            fn render() -> Markup { html! { p bq-ref="row" {} } }
+        }
+    "##,
+    )]);
+    assert_eq!(setup(&types, "Card"), r#"Setup<"section", { row: "p"; title: "h2" }>"#);
+    assert!(warnings.is_empty(), "{warnings:?}");
 }

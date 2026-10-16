@@ -15,7 +15,7 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::{Expr, Lit, Stmt, parse::Parser, spanned::Spanned, visit::Visit};
 
 use crate::{
-    index::{Function, Index},
+    index::{Function, Index, Resolved},
     on::{self, On, Target},
 };
 
@@ -368,9 +368,9 @@ impl<'a> Walker<'a> {
         }
 
         if !cx.scope.path.is_empty()
-            && let Some(name) = called_function(expr)
+            && let Some(callee) = called_function(expr)
             && let location = self.location(cx.file, expr.span())
-            && let Some(function) = self.lookup(&name, cx.file, false, &location)
+            && let Some(function) = self.lookup(&callee, cx, false, &location)
             && !self.stack.contains(&function)
         {
             self.followed.insert(function);
@@ -434,8 +434,8 @@ impl<'a> Walker<'a> {
                         ComponentArg::Named { name, value, .. } => named.push((name.to_string(), value, Cell::new(false))),
                     }
                 }
-                let name = path.segments.last().map(|segment| segment.ident.to_string()).unwrap_or_default();
-                return self.component(&name, element, named, &location, cx);
+                let callee = Callee::Path(path.segments.iter().map(|segment| segment.ident.to_string()).collect());
+                return self.component(&callee, element, named, &location, cx);
             }
         };
 
@@ -460,7 +460,7 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn component<'e>(&mut self, name: &str, element: &'e Element, args: Vec<(String, &'e Expr, Cell<bool>)>, location: &str, cx: &Cx) {
+    fn component<'e>(&mut self, callee: &Callee, element: &'e Element, args: Vec<(String, &'e Expr, Cell<bool>)>, location: &str, cx: &Cx) {
         let mut outside = vec![Outside {
             attrs: self.call_attrs(&element.attrs, location, cx.function),
             function: cx.function,
@@ -478,7 +478,7 @@ impl<'a> Walker<'a> {
         };
 
         let function = self
-            .lookup(name, cx.file, true, location)
+            .lookup(callee, cx, true, location)
             .filter(|function| !self.stack.contains(function));
         let Some(function) = function else {
             for (_, value, _) in &args {
@@ -728,33 +728,23 @@ impl<'a> Walker<'a> {
         });
     }
 
-    fn lookup(&mut self, name: &str, file: usize, component: bool, location: &str) -> Option<usize> {
-        let table = if component { &self.index.components } else { &self.index.by_name };
-        let candidates = table.get(name)?;
-        let root = self.index.files[file].root;
-
-        let in_file: Vec<usize> = candidates
-            .iter()
-            .copied()
-            .filter(|&c| self.index.functions[c].file == file)
-            .collect();
-        if let Some(&first) = in_file.first() {
-            return Some(first);
-        }
-        let in_root: Vec<usize> = candidates
-            .iter()
-            .copied()
-            .filter(|&c| self.index.files[self.index.functions[c].file].root == root)
-            .collect();
-        match (in_root.as_slice(), candidates.as_slice()) {
-            ([one], _) | ([], [one]) => Some(*one),
-            _ => {
+    fn lookup(&mut self, callee: &Callee, cx: &Cx, component: bool, location: &str) -> Option<usize> {
+        let module = self.index.module_of(cx.file, cx.function);
+        let resolved = match callee {
+            Callee::Path(path) => self.index.resolve(module, cx.file, path, component),
+            Callee::Method(name) => self.index.method(module, cx.file, name),
+        };
+        match resolved {
+            Resolved::Found(function) => Some(function),
+            Resolved::Missing => None,
+            Resolved::Ambiguous(candidates) => {
                 let places: Vec<&str> = candidates
                     .iter()
                     .map(|&c| self.index.files[self.index.functions[c].file].name.as_str())
                     .collect();
                 self.warnings.push(format!(
-                    "{location}: `{name}` matches more than one function ({}), so bq_setups does not follow it",
+                    "{location}: `{}` matches more than one function ({}), so bq_setups does not follow it",
+                    callee.name(),
                     places.join(", ")
                 ));
                 None
@@ -891,12 +881,31 @@ fn is_children(expr: &Expr) -> bool {
     }
 }
 
-fn called_function(expr: &Expr) -> Option<String> {
+enum Callee {
+    Path(Vec<String>),
+    Method(String),
+}
+
+impl Callee {
+    fn name(&self) -> &str {
+        match self {
+            Callee::Path(path) => path.last().map(String::as_str).unwrap_or_default(),
+            Callee::Method(name) => name,
+        }
+    }
+}
+
+fn called_function(expr: &Expr) -> Option<Callee> {
     match expr {
         Expr::Call(call) => match call.func.as_ref() {
-            Expr::Path(path) => path.path.segments.last().map(|segment| segment.ident.to_string()),
+            Expr::Path(path) => Some(Callee::Path(
+                path.path.segments.iter().map(|segment| segment.ident.to_string()).collect(),
+            )),
             _ => None,
         },
+        Expr::MethodCall(method) if matches!(method.receiver.as_ref(), Expr::Path(path) if path.path.is_ident("self")) => {
+            Some(Callee::Method(method.method.to_string()))
+        }
         Expr::MethodCall(method) => called_function(&method.receiver),
         Expr::Reference(reference) => called_function(&reference.expr),
         Expr::Paren(paren) => called_function(&paren.expr),
