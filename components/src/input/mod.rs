@@ -61,7 +61,6 @@ const AUTOFILL: &[&str] = &[
     "new-password",
 ];
 
-
 fn described_by(id: &str, hint: Option<&str>) -> String {
     match hint {
         Some(_) => format!("{id}-hint {id}-error"),

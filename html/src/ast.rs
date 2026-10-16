@@ -4,17 +4,16 @@ use proc_macro2::TokenStream;
 use proc_macro2_diagnostics::{Diagnostic, SpanDiagnosticExt};
 use quote::ToTokens;
 use syn::{
-    braced, bracketed,
+    Error, Expr, Ident, Lit, LitBool, LitInt, LitStr, Local, Pat, Path, Stmt, braced, bracketed,
     ext::IdentExt,
     parenthesized,
     parse::{Lookahead1, Parse, ParseStream},
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     token::{
-        At, Brace, Bracket, Colon, Comma, Dot, DotDot, Else, Eq, EqEq, FatArrow, For, If, In, Let,
-        Match, Minus, Or, OrOr, Paren, Pound, Question, Semi, Slash, While,
+        At, Brace, Bracket, Colon, Comma, Dot, DotDot, Else, Eq, EqEq, FatArrow, For, If, In, Let, Match, Minus, Or, OrOr, Paren, Pound,
+        Question, Semi, Slash, While,
     },
-    Error, Expr, Ident, Lit, LitBool, LitInt, LitStr, Local, Pat, Path, Stmt,
 };
 
 pub mod kw {
@@ -27,10 +26,7 @@ pub struct Markups<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for Markups<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let mut markups = Vec::new();
         while !input.is_empty() {
             markups.push(Markup::diagnostic_parse_in_block(input, diagnostics)?)
@@ -58,17 +54,8 @@ pub enum Markup<E> {
 }
 
 impl<E: MaybeElement> Markup<E> {
-    pub fn diagnostic_parse_in_block(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
-        if input.peek(Let)
-            || input.peek(If)
-            || input.peek(Else)
-            || input.peek(For)
-            || input.peek(While)
-            || input.peek(Match)
-        {
+    pub fn diagnostic_parse_in_block(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
+        if input.peek(Let) || input.peek(If) || input.peek(Else) || input.peek(For) || input.peek(While) || input.peek(Match) {
             let kw = input.call(Ident::parse_any)?;
             diagnostics.push(
                 kw.span()
@@ -87,10 +74,7 @@ impl<E: MaybeElement> Markup<E> {
             let content;
             let paren_token = parenthesized!(content in input);
             if content.peek(DotDot) {
-                return Err(Error::new(
-                    paren_token.span.join(),
-                    "`(..attrs)` must come after an element",
-                ));
+                return Err(Error::new(paren_token.span.join(), "`(..attrs)` must come after an element"));
             }
             Ok(Self::Splice {
                 paren_token,
@@ -114,10 +98,7 @@ impl<E: MaybeElement> Markup<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for Markup<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let markup = Self::diagnostic_parse_in_block(input, diagnostics)?;
 
         if let Self::ControlFlow(ControlFlow {
@@ -125,11 +106,7 @@ impl<E: MaybeElement> DiagnosticParse for Markup<E> {
             ..
         }) = &markup
         {
-            diagnostics.push(
-                markup
-                    .span()
-                    .error("`@let` bindings are only allowed inside blocks"),
-            )
+            diagnostics.push(markup.span().error("`@let` bindings are only allowed inside blocks"))
         }
 
         Ok(markup)
@@ -173,9 +150,7 @@ pub type DiagnosticParseFn<T> = fn(ParseStream, &mut Vec<Diagnostic>) -> syn::Re
 pub enum NoElement {}
 
 impl MaybeElement for NoElement {
-    fn should_parse(
-        _lookahead: &Lookahead1<'_>,
-    ) -> Option<fn(ParseStream, &mut Vec<Diagnostic>) -> syn::Result<Self>> {
+    fn should_parse(_lookahead: &Lookahead1<'_>) -> Option<fn(ParseStream, &mut Vec<Diagnostic>) -> syn::Result<Self>> {
         None
     }
 
@@ -204,9 +179,7 @@ impl From<NoElement> for Element {
 }
 
 impl MaybeElement for Element {
-    fn should_parse(
-        lookahead: &Lookahead1<'_>,
-    ) -> Option<fn(ParseStream, &mut Vec<Diagnostic>) -> syn::Result<Self>> {
+    fn should_parse(lookahead: &Lookahead1<'_>) -> Option<fn(ParseStream, &mut Vec<Diagnostic>) -> syn::Result<Self>> {
         if lookahead.peek(Ident::peek_any) || lookahead.peek(Dot) || lookahead.peek(Pound) {
             Some(Element::diagnostic_parse)
         } else {
@@ -261,10 +234,7 @@ fn peek_component(input: ParseStream) -> bool {
 }
 
 impl DiagnosticParse for ElementName {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         if input.peek(At) {
             let content;
             Ok(Self::Dynamic {
@@ -323,10 +293,7 @@ pub enum ComponentArg {
 
 impl Parse for ComponentArg {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let named = input.peek(Ident)
-            && input.peek2(Eq)
-            && !input.peek2(EqEq)
-            && !input.peek2(FatArrow);
+        let named = input.peek(Ident) && input.peek2(Eq) && !input.peek2(EqEq) && !input.peek2(FatArrow);
         if named {
             let name = input.parse()?;
             let eq_token = input.parse()?;
@@ -383,11 +350,7 @@ impl ToTokens for ElementName {
                 element_token.to_tokens(tokens);
                 paren_token.surround(tokens, |tokens| expr.to_tokens(tokens));
             }
-            Self::Component {
-                path,
-                paren_token,
-                args,
-            } => {
+            Self::Component { path, paren_token, args } => {
                 path.to_tokens(tokens);
                 if let Some(paren_token) = paren_token {
                     paren_token.surround(tokens, |tokens| args.to_tokens(tokens));
@@ -398,10 +361,7 @@ impl ToTokens for ElementName {
 }
 
 impl DiagnosticParse for Element {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             name: if input.peek(Ident::peek_any) || input.peek(At) {
                 Some(input.diagnostic_parse(diagnostics)?)
@@ -412,20 +372,12 @@ impl DiagnosticParse for Element {
                 let mut id_pushed = false;
                 let mut attrs = Vec::new();
 
-                while input.peek(Ident::peek_any)
-                    || input.peek(Lit)
-                    || input.peek(Dot)
-                    || input.peek(Pound)
-                    || input.peek(Paren)
-                {
+                while input.peek(Ident::peek_any) || input.peek(Lit) || input.peek(Dot) || input.peek(Pound) || input.peek(Paren) {
                     let attr = input.diagnostic_parse(diagnostics)?;
 
                     if let Attribute::Id { .. } = attr {
                         if id_pushed {
-                            return Err(Error::new_spanned(
-                                attr,
-                                "duplicate id (`#`) attribute specified",
-                            ));
+                            return Err(Error::new_spanned(attr, "duplicate id (`#`) attribute specified"));
                         }
                         id_pushed = true;
                     }
@@ -474,10 +426,7 @@ pub enum ElementBody {
 }
 
 impl DiagnosticParse for ElementBody {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
         if lookahead.peek(Semi) {
@@ -517,10 +466,7 @@ pub struct Block<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for Block<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let content;
         Ok(Self {
             brace_token: braced!(content in input),
@@ -560,10 +506,7 @@ pub enum Attribute {
 }
 
 impl DiagnosticParse for Attribute {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
         if lookahead.peek(Dot) {
@@ -618,7 +561,7 @@ impl DiagnosticParse for Attribute {
                     attr.span()
                         .error("attribute value must be a string")
                         .help(format!("to declare an empty attribute, omit the equals sign: `{name}`"))
-                        .help(format!("to toggle the attribute, use square brackets: `{name}[some_boolean_flag]`"))
+                        .help(format!("to toggle the attribute, use square brackets: `{name}[some_boolean_flag]`")),
                 );
             }
 
@@ -630,11 +573,7 @@ impl DiagnosticParse for Attribute {
 impl ToTokens for Attribute {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         match self {
-            Self::Class {
-                dot_token,
-                name,
-                toggler,
-            } => {
+            Self::Class { dot_token, name, toggler } => {
                 dot_token.to_tokens(tokens);
                 name.to_tokens(tokens);
                 if let Some(toggler) = toggler {
@@ -668,10 +607,7 @@ pub enum HtmlNameOrMarkup {
 }
 
 impl DiagnosticParse for HtmlNameOrMarkup {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         if input.peek(Ident::peek_any) || input.peek(Lit) {
             input.diagnostic_parse(diagnostics).map(Self::HtmlName)
         } else {
@@ -706,22 +642,13 @@ impl Display for HtmlNameOrMarkup {
 
 #[derive(Debug, Clone)]
 pub enum AttributeType {
-    Normal {
-        eq_token: Eq,
-        value: Markup<NoElement>,
-    },
-    Optional {
-        eq_token: Eq,
-        toggler: Toggler,
-    },
+    Normal { eq_token: Eq, value: Markup<NoElement> },
+    Optional { eq_token: Eq, toggler: Toggler },
     Empty(Option<Toggler>),
 }
 
 impl DiagnosticParse for AttributeType {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
         if lookahead.peek(Eq) {
@@ -772,10 +699,7 @@ pub struct HtmlName {
 }
 
 impl DiagnosticParse for HtmlName {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             name: {
                 let mut punctuated = Punctuated::new();
@@ -846,10 +770,7 @@ pub enum HtmlNameFragment {
 }
 
 impl DiagnosticParse for HtmlNameFragment {
-    fn diagnostic_parse(
-        input: ParseStream,
-        _diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, _diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
         if lookahead.peek(Ident::peek_any) {
@@ -894,10 +815,7 @@ pub struct HtmlLit {
 }
 
 impl DiagnosticParse for HtmlLit {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
         if lookahead.peek(Lit) {
@@ -905,28 +823,19 @@ impl DiagnosticParse for HtmlLit {
             match lit {
                 Lit::Str(lit) => Ok(Self { lit }),
                 Lit::Int(lit) => {
-                    diagnostics.push(
-                        lit.span()
-                            .error(format!(r#"literal must be double-quoted: `"{lit}"`"#)),
-                    );
+                    diagnostics.push(lit.span().error(format!(r#"literal must be double-quoted: `"{lit}"`"#)));
                     Ok(Self {
                         lit: LitStr::new("", lit.span()),
                     })
                 }
                 Lit::Float(lit) => {
-                    diagnostics.push(
-                        lit.span()
-                            .error(format!(r#"literal must be double-quoted: `"{lit}"`"#)),
-                    );
+                    diagnostics.push(lit.span().error(format!(r#"literal must be double-quoted: `"{lit}"`"#)));
                     Ok(Self {
                         lit: LitStr::new("", lit.span()),
                     })
                 }
                 Lit::Char(lit) => {
-                    diagnostics.push(lit.span().error(format!(
-                        r#"literal must be double-quoted: `"{}"`"#,
-                        lit.value()
-                    )));
+                    diagnostics.push(lit.span().error(format!(r#"literal must be double-quoted: `"{}"`"#, lit.value())));
                     Ok(Self {
                         lit: LitStr::new("", lit.span()),
                     })
@@ -1034,10 +943,7 @@ pub struct ControlFlow<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for ControlFlow<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             at_token: input.parse()?,
             kind: {
@@ -1052,9 +958,7 @@ impl<E: MaybeElement> DiagnosticParse for ControlFlow<E> {
                 } else if lookahead.peek(Match) {
                     ControlFlowKind::Match(input.diagnostic_parse(diagnostics)?)
                 } else if lookahead.peek(Let) {
-                    let Stmt::Local(local) = input.parse()? else {
-                        unreachable!()
-                    };
+                    let Stmt::Local(local) = input.parse()? else { unreachable!() };
 
                     ControlFlowKind::Let(local)
                 } else {
@@ -1096,21 +1000,14 @@ pub struct IfExpr<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for IfExpr<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             if_token: input.parse()?,
             cond: input.call(Expr::parse_without_eager_brace)?,
             then_branch: input.diagnostic_parse(diagnostics)?,
             else_branch: {
                 if input.peek(At) && input.peek2(Else) {
-                    Some((
-                        input.parse()?,
-                        input.parse()?,
-                        input.diagnostic_parse(diagnostics)?,
-                    ))
+                    Some((input.parse()?, input.parse()?, input.diagnostic_parse(diagnostics)?))
                 } else {
                     None
                 }
@@ -1139,10 +1036,7 @@ pub enum IfOrBlock<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for IfOrBlock<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
 
         if lookahead.peek(If) {
@@ -1174,10 +1068,7 @@ pub struct ForExpr<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for ForExpr<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             for_token: input.parse()?,
             pat: input.call(Pat::parse_multi_with_leading_vert)?,
@@ -1206,10 +1097,7 @@ pub struct WhileExpr<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for WhileExpr<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             while_token: input.parse()?,
             cond: input.call(Expr::parse_without_eager_brace)?,
@@ -1235,10 +1123,7 @@ pub struct MatchExpr<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for MatchExpr<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let match_token = input.parse()?;
         let expr = input.call(Expr::parse_without_eager_brace)?;
 
@@ -1281,10 +1166,7 @@ pub struct MatchArm<E> {
 }
 
 impl<E: MaybeElement> DiagnosticParse for MatchArm<E> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Self {
             pat: Pat::parse_multi_with_leading_vert(input)?,
             guard: {
@@ -1296,11 +1178,7 @@ impl<E: MaybeElement> DiagnosticParse for MatchArm<E> {
             },
             fat_arrow_token: input.parse()?,
             body: Markup::diagnostic_parse_in_block(input, diagnostics)?,
-            comma_token: if input.peek(Comma) {
-                Some(input.parse()?)
-            } else {
-                None
-            },
+            comma_token: if input.peek(Comma) { Some(input.parse()?) } else { None },
         })
     }
 }
@@ -1321,24 +1199,17 @@ impl<E: ToTokens> ToTokens for MatchArm<E> {
 }
 
 pub trait DiagnosticParse: Sized {
-    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>)
-        -> syn::Result<Self>;
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self>;
 }
 
 impl<T: DiagnosticParse> DiagnosticParse for Box<T> {
-    fn diagnostic_parse(
-        input: ParseStream,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<Self> {
+    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         Ok(Box::new(input.diagnostic_parse(diagnostics)?))
     }
 }
 
 trait DiagonsticParseExt: Sized {
-    fn diagnostic_parse<T: DiagnosticParse>(
-        self,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> syn::Result<T>;
+    fn diagnostic_parse<T: DiagnosticParse>(self, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<T>;
 }
 
 impl DiagonsticParseExt for ParseStream<'_> {

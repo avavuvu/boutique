@@ -2,12 +2,12 @@ use heck::ToKebabCase;
 use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, TokenStream, TokenTree};
 use proc_macro2_diagnostics::{Diagnostic, SpanDiagnosticExt};
 use syn::{
+    Expr, ExprPath, LitStr, Path, Token,
     ext::IdentExt,
     parse::{Parse, ParseStream},
     spanned::Spanned,
     token::Paren,
     visit_mut::VisitMut,
-    Expr, ExprPath, LitStr, Path, Token,
 };
 
 use crate::ast::*;
@@ -104,7 +104,11 @@ impl Marker<'_> {
                         out.as_slice(),
                         [.., TokenTree::Ident(name), TokenTree::Punct(bang)] if name == "html" && bang.as_char() == '!'
                     );
-                    let stream = if html { self.html(group.stream()) } else { self.tokens(group.stream()) };
+                    let stream = if html {
+                        self.html(group.stream())
+                    } else {
+                        self.tokens(group.stream())
+                    };
                     let mut rebuilt = Group::new(group.delimiter(), stream);
                     rebuilt.set_span(group.span());
                     TokenTree::Group(rebuilt)
@@ -123,8 +127,9 @@ impl Marker<'_> {
         }
         self.found = true;
         let argument = Group::new(Delimiter::Parenthesis, TokenTree::Ident(self.setup.clone()).into());
-        let inner: TokenStream =
-            [TokenTree::Ident(Ident::new(MARKER, self.setup.span())), TokenTree::Group(argument)].into_iter().collect();
+        let inner: TokenStream = [TokenTree::Ident(Ident::new(MARKER, self.setup.span())), TokenTree::Group(argument)]
+            .into_iter()
+            .collect();
         let mut marked: Vec<TokenTree> = vec![
             TokenTree::Punct(Punct::new('#', Spacing::Alone)),
             TokenTree::Punct(Punct::new('!', Spacing::Alone)),

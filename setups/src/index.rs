@@ -57,14 +57,23 @@ impl Index {
     pub fn add_file(&mut self, name: String, root: usize, import: String, parsed: &syn::File) {
         let file = self.files.len();
         self.files.push(File { name, root, import });
-        let mut collector =
-            Collector { index: self, file, local: HashMap::new(), current: None, flags: Flags::default(), binding: None };
+        let mut collector = Collector {
+            index: self,
+            file,
+            local: HashMap::new(),
+            current: None,
+            flags: Flags::default(),
+            binding: None,
+        };
         collector.visit_file(parsed);
     }
 
     fn function(&mut self, file: usize, local: &mut HashMap<String, usize>, item: &syn::ItemFn) -> usize {
         let name = item.sig.ident.to_string();
-        let attribute = item.attrs.iter().find(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "component"));
+        let attribute = item
+            .attrs
+            .iter()
+            .find(|attr| attr.path().segments.last().is_some_and(|segment| segment.ident == "component"));
         let component = attribute.is_some();
 
         let index = *local.entry(name.clone()).or_insert_with(|| {
@@ -83,7 +92,11 @@ impl Index {
 
         if component && !self.functions[index].component {
             self.functions[index].component = true;
-            let alias = if name.starts_with(|first: char| first.is_ascii_uppercase()) { name } else { name.to_upper_camel_case() };
+            let alias = if name.starts_with(|first: char| first.is_ascii_uppercase()) {
+                name
+            } else {
+                name.to_upper_camel_case()
+            };
             self.components.entry(alias).or_default().push(index);
         }
         if let Some(attribute) = attribute {
@@ -122,7 +135,14 @@ impl Index {
     fn block(&mut self, file: usize, function: Option<usize>, tokens: proc_macro2::TokenStream, flags: Flags, binding: Option<String>) {
         let Some(markups) = parse(tokens) else { return };
         let binding = binding.filter(|_| function.is_some());
-        self.blocks.push(Block { file, function, markups, binding: binding.clone(), optional: flags.optional, many: flags.many });
+        self.blocks.push(Block {
+            file,
+            function,
+            markups,
+            binding: binding.clone(),
+            optional: flags.optional,
+            many: flags.many,
+        });
         let block = self.blocks.len() - 1;
         if let Some(function) = function {
             self.functions[function].blocks.push(block);

@@ -3,14 +3,7 @@ use maud::Markup;
 use crate::{Attrs, component, html};
 
 #[component]
-pub fn button(
-    href: Option<&str>,
-    post: Option<&str>,
-    submit: bool,
-    disabled: bool,
-    attrs: Attrs,
-    children: Markup,
-) -> Markup {
+pub fn button(href: Option<&str>, post: Option<&str>, submit: bool, disabled: bool, attrs: Attrs, children: Markup) -> Markup {
     debug_assert!(
         href.is_none() || post.is_none(),
         "Button cannot have both `href` and `post`: a link cannot send a POST form"

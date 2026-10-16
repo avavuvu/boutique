@@ -9,7 +9,10 @@ fn button_defaults_to_type_button() {
 #[test]
 fn button_submit_with_styling_classes() {
     let result = html! { Button(submit = true) .primary .small { "Save" } };
-    assert_eq!(result.into_string(), r#"<button class="button primary small" type="submit">Save</button>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<button class="button primary small" type="submit">Save</button>"#
+    );
 }
 
 #[test]
@@ -87,7 +90,10 @@ fn button_htmx_and_static_type_wins() {
 #[test]
 fn button_without_children() {
     let result = html! { Button .icon aria-label="Close"; };
-    assert_eq!(result.into_string(), r#"<button class="button icon" type="button" aria-label="Close"></button>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<button class="button icon" type="button" aria-label="Close"></button>"#
+    );
 }
 
 #[test]
@@ -110,7 +116,10 @@ fn input_with_attributes_and_escaping() {
     );
     assert!(result.contains(r#"<label for="q">Search</label>"#), "{result}");
     assert!(result.contains(r#"<div class="shell">"#), "{result}");
-    assert!(result.contains(r#"<p class="error" id="q-error" aria-live="polite"></p>"#), "{result}");
+    assert!(
+        result.contains(r#"<p class="error" id="q-error" aria-live="polite"></p>"#),
+        "{result}"
+    );
 }
 
 #[test]
@@ -151,14 +160,20 @@ fn input_validation_attributes() {
     assert!(result.contains(r#"pattern="[a-z]+" minlength="3" maxlength="40""#), "{result}");
 
     let file = html! { Input("file", kind = Kind::File, label = "File") accept=".csv"; }.into_string();
-    assert!(file.contains(r#"type="file" aria-describedby="file-error" accept=".csv""#), "{file}");
+    assert!(
+        file.contains(r#"type="file" aria-describedby="file-error" accept=".csv""#),
+        "{file}"
+    );
 }
 
 #[test]
 fn password_keeps_the_toggle_and_extra_attributes() {
     let result = html! { Input("password", kind = Kind::Password, label = "Password") .wide data-test="pw" required; }.into_string();
     assert!(result.contains(r#"<label for="password">Password</label>"#), "{result}");
-    assert!(result.contains(r#"<div class="shell password" bq-setup="password-toggle">"#), "{result}");
+    assert!(
+        result.contains(r#"<div class="shell password" bq-setup="password-toggle">"#),
+        "{result}"
+    );
     assert!(
         result.contains(
             r#"<input class="password-input wide" id="password" name="password" type="password" aria-describedby="password-error" data-test="pw" required autocomplete="current-password">"#
@@ -202,11 +217,17 @@ fn input_error_marks_the_field_invalid() {
         ),
         "{result}"
     );
-    assert!(result.contains(r#"<p class="error" id="email-error" aria-live="polite">Enter a valid email</p>"#), "{result}");
+    assert!(
+        result.contains(r#"<p class="error" id="email-error" aria-live="polite">Enter a valid email</p>"#),
+        "{result}"
+    );
 
     let valid = html! { Input("email", kind = Kind::Email, label = "Email"); }.into_string();
     assert!(!valid.contains("aria-invalid"), "{valid}");
-    assert!(valid.contains(r#"<p class="error" id="email-error" aria-live="polite"></p>"#), "{valid}");
+    assert!(
+        valid.contains(r#"<p class="error" id="email-error" aria-live="polite"></p>"#),
+        "{valid}"
+    );
 }
 
 #[test]
@@ -235,7 +256,6 @@ fn input_accepts_aria_label_or_aria_labelledby() {
     let by = html! { Input("q") aria-labelledby="search-heading"; }.into_string();
     assert!(by.contains(r#"aria-labelledby="search-heading""#), "{by}");
 }
-
 
 #[test]
 fn input_value_from_a_variable() {
@@ -270,5 +290,8 @@ fn textarea_hint_error_and_custom_id() {
         "{result}"
     );
     assert!(result.contains(r#"<p class="hint" id="about-hint">Short</p>"#), "{result}");
-    assert!(result.contains(r#"<p class="error" id="about-error" aria-live="polite">Too long</p>"#), "{result}");
+    assert!(
+        result.contains(r#"<p class="error" id="about-error" aria-live="polite">Too long</p>"#),
+        "{result}"
+    );
 }

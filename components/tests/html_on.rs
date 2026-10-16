@@ -25,7 +25,10 @@ fn modifiers_and_targets() {
 #[test]
 fn keyword_modifiers() {
     let result = html! { div bq-on:click|self|once="a" bq-on:keydown|mod|s="b" {} };
-    assert_eq!(result.into_string(), r#"<div bq-on:click|self|once="a" bq-on:keydown|mod|s="b"></div>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<div bq-on:click|self|once="a" bq-on:keydown|mod|s="b"></div>"#
+    );
 }
 
 #[test]
@@ -43,7 +46,10 @@ fn prefixed_handler_value() {
 #[test]
 fn same_event_with_different_modifiers() {
     let result = html! { div bq-on:keydown|enter="a" bq-on:keydown|escape="b" {} };
-    assert_eq!(result.into_string(), r#"<div bq-on:keydown|enter="a" bq-on:keydown|escape="b"></div>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<div bq-on:keydown|enter="a" bq-on:keydown|escape="b"></div>"#
+    );
 }
 
 #[test]

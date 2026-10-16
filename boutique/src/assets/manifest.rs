@@ -35,7 +35,10 @@ fn read(path: &str) -> Option<Entries> {
             .into_values()
             .filter(|chunk| chunk.is_entry)
             .filter_map(|chunk| {
-                let entry = Entry { file: chunk.file, styles: chunk.css };
+                let entry = Entry {
+                    file: chunk.file,
+                    styles: chunk.css,
+                };
                 chunk.name.map(|name| (name, entry))
             })
             .collect(),
@@ -44,7 +47,11 @@ fn read(path: &str) -> Option<Entries> {
 
 pub fn init(route: &str, dir: &str) {
     let path = format!("{dir}/.vite/manifest.json");
-    let config = Config { route: route.trim_end_matches('/').to_string(), path, cache: OnceLock::new() };
+    let config = Config {
+        route: route.trim_end_matches('/').to_string(),
+        path,
+        cache: OnceLock::new(),
+    };
 
     if cfg!(debug_assertions) {
         if read(&config.path).is_none() {
@@ -70,7 +77,10 @@ fn lookup<T>(name: &str, pick: impl Fn(&str, &Entry) -> T) -> Option<T> {
     let found = if cfg!(debug_assertions) {
         read(&config.path).and_then(|entries| entries.get(name).map(|entry| pick(&config.route, entry)))
     } else {
-        config.cache.get().and_then(|entries| entries.get(name).map(|entry| pick(&config.route, entry)))
+        config
+            .cache
+            .get()
+            .and_then(|entries| entries.get(name).map(|entry| pick(&config.route, entry)))
     };
     if found.is_none() {
         tracing::warn!("no entry named {name:?} in {}", config.path);
@@ -83,5 +93,8 @@ pub fn url(name: &str) -> Option<String> {
 }
 
 pub fn styles(name: &str) -> Vec<String> {
-    lookup(name, |route, entry| entry.styles.iter().map(|file| format!("{route}/{file}")).collect()).unwrap_or_default()
+    lookup(name, |route, entry| {
+        entry.styles.iter().map(|file| format!("{route}/{file}")).collect()
+    })
+    .unwrap_or_default()
 }

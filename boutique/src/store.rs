@@ -29,11 +29,7 @@ pub trait AuthStore<U>: Clone + Send + Sync + 'static {
 
     fn create_session(&self, session: NewSession) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    fn find_session_user(
-        &self,
-        token_hash: &str,
-        now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
+    fn find_session_user(&self, token_hash: &str, now: DateTime<Utc>) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
 
     fn delete_session(&self, token_hash: &str) -> impl Future<Output = Result<(), Self::Error>> + Send;
 

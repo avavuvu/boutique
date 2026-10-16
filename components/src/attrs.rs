@@ -45,7 +45,9 @@ impl Attrs {
     pub fn set_default(&mut self, name: &'static str, value: &str) {
         if !self.has(name) {
             let mut escaped = String::with_capacity(value.len());
-            maud::Escaper::new(&mut escaped).write_str(value).expect("writing to a String cannot fail");
+            maud::Escaper::new(&mut escaped)
+                .write_str(value)
+                .expect("writing to a String cannot fail");
             self.__text(name, escaped);
         }
     }
@@ -82,7 +84,6 @@ impl Attrs {
     pub fn __class(&mut self, escaped: &str) {
         push_class(&mut self.class, escaped);
     }
-
 
     #[doc(hidden)]
     pub fn __extend(&mut self, other: &Attrs) {

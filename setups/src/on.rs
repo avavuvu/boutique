@@ -34,7 +34,16 @@ const KEYS: [&str; 7] = ["enter", "escape", "tab", "space", "delete", "up", "dow
 const SYSTEM: [&str; 6] = ["ctrl", "alt", "shift", "meta", "mod", "exact"];
 
 const KEYBOARD: [&str; 3] = ["keydown", "keyup", "keypress"];
-const BUTTON: [&str; 8] = ["click", "dblclick", "mousedown", "mouseup", "contextmenu", "auxclick", "pointerdown", "pointerup"];
+const BUTTON: [&str; 8] = [
+    "click",
+    "dblclick",
+    "mousedown",
+    "mouseup",
+    "contextmenu",
+    "auxclick",
+    "pointerdown",
+    "pointerup",
+];
 const POINTER: [&str; 15] = [
     "mousemove",
     "mouseover",
@@ -57,11 +66,16 @@ pub fn kebab(text: &str) -> bool {
     text.chars().next().is_some_and(|first| first.is_ascii_lowercase())
         && !text.ends_with('-')
         && !text.contains("--")
-        && text.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-')
+        && text
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-')
 }
 
 fn single_key(modifier: &str) -> bool {
-    modifier.len() == 1 && modifier.chars().all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
+    modifier.len() == 1
+        && modifier
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit())
 }
 
 pub fn parse(attribute: &str, value: &str) -> Result<Vec<On>, String> {
@@ -74,7 +88,9 @@ pub fn parse(attribute: &str, value: &str) -> Result<Vec<On>, String> {
         return Err(format!("{attribute} needs an event name, for example bq-on:click=\"save\""));
     }
     if event.chars().any(|character| character.is_ascii_uppercase()) {
-        return Err(format!("{attribute}: event names must be lowercase, because HTML makes attribute names lowercase"));
+        return Err(format!(
+            "{attribute}: event names must be lowercase, because HTML makes attribute names lowercase"
+        ));
     }
 
     let keyboard = KEYBOARD.contains(&event.as_str());
@@ -114,7 +130,9 @@ pub fn parse(attribute: &str, value: &str) -> Result<Vec<On>, String> {
     }
 
     if seen.contains("passive") && seen.contains("prevent") {
-        return Err(format!("{attribute}: `passive` and `prevent` cannot be used together, because a passive listener cannot prevent the default"));
+        return Err(format!(
+            "{attribute}: `passive` and `prevent` cannot be used together, because a passive listener cannot prevent the default"
+        ));
     }
     if seen.contains("self") && target != Target::Element {
         return Err(format!("{attribute}: `self` cannot be used with `window` or `document`"));
@@ -143,17 +161,30 @@ fn handler(attribute: &str, value: &str, event: &str, target: &Target) -> Result
             Some(setup) => format!("{setup}.{}", handler.to_kebab_case()),
             None => handler.to_kebab_case(),
         };
-        return Err(format!("{attribute}=\"{value}\": the handler must be kebab-case, for example {attribute}=\"{example}\""));
+        return Err(format!(
+            "{attribute}=\"{value}\": the handler must be kebab-case, for example {attribute}=\"{example}\""
+        ));
     }
     if handler == "disconnect" {
-        return Err(format!("{attribute}=\"{value}\": `disconnect` is reserved for the code that runs when the setup stops"));
+        return Err(format!(
+            "{attribute}=\"{value}\": `disconnect` is reserved for the code that runs when the setup stops"
+        ));
     }
     if let Some(setup) = &setup
         && !kebab(setup)
     {
-        return Err(format!("{attribute}=\"{value}\": the setup name must be kebab-case, for example \"dirty-form.save\""));
+        return Err(format!(
+            "{attribute}=\"{value}\": the setup name must be kebab-case, for example \"dirty-form.save\""
+        ));
     }
 
     let key = handler.to_lower_camel_case();
-    Ok(On { attribute: attribute.to_string(), event: event.to_string(), target: target.clone(), setup, handler, key })
+    Ok(On {
+        attribute: attribute.to_string(),
+        event: event.to_string(),
+        target: target.clone(),
+        setup,
+        handler,
+        key,
+    })
 }

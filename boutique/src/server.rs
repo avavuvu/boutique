@@ -150,20 +150,34 @@ impl Server {
         let policy = self.file_policy(Cache::Immutable, true);
         router = router.nest_service(route, files_service(policy, ServeDir::new(dir)));
 
-        let router = router.fallback_service(fallback).layer(middleware::from_fn(cross_origin_protection));
+        let router = router
+            .fallback_service(fallback)
+            .layer(middleware::from_fn(cross_origin_protection));
         let router = match self.error_page {
             Some(wrap) => wrap(router),
             None => router,
         };
 
-        let router = if self.debug { router } else { router.layer(middleware::from_fn(https_redirect)) };
+        let router = if self.debug {
+            router
+        } else {
+            router.layer(middleware::from_fn(https_redirect))
+        };
 
         router.layer(compression()).layer(TraceLayer::new_for_http())
     }
 
     fn file_policy(&self, cache: Cache, hide_dotfiles: bool) -> FilePolicy {
-        let cache_control = if self.debug { HeaderValue::from_static("no-store") } else { cache.header_value() };
-        FilePolicy { cache_control, debug: self.debug, hide_dotfiles }
+        let cache_control = if self.debug {
+            HeaderValue::from_static("no-store")
+        } else {
+            cache.header_value()
+        };
+        FilePolicy {
+            cache_control,
+            debug: self.debug,
+            hide_dotfiles,
+        }
     }
 
     pub async fn serve<F>(self, fallback: F, port: &str)
@@ -187,13 +201,18 @@ fn compression() -> CompressionLayer<impl Predicate> {
     )
 }
 
-fn files_service<S>(policy: FilePolicy, service: S) -> impl Service<Request, Response = Response, Error = Infallible, Future: Send> + Clone + Send + Sync + 'static
+fn files_service<S>(
+    policy: FilePolicy,
+    service: S,
+) -> impl Service<Request, Response = Response, Error = Infallible, Future: Send> + Clone + Send + Sync + 'static
 where
     S: Service<Request, Error = Infallible> + Clone + Send + Sync + 'static,
     S::Response: IntoResponse,
     S::Future: Send + 'static,
 {
-    ServiceBuilder::new().layer(middleware::from_fn_with_state(policy, file_headers)).service(service)
+    ServiceBuilder::new()
+        .layer(middleware::from_fn_with_state(policy, file_headers))
+        .service(service)
 }
 
 async fn file_headers(State(policy): State<FilePolicy>, request: Request, next: Next) -> Response {
@@ -222,11 +241,7 @@ async fn https_redirect(req: Request<Body>, next: Next) -> Response {
         .unwrap_or(false);
 
     if is_http {
-        let host = req
-            .headers()
-            .get(header::HOST)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+        let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
         let path = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
         return Redirect::permanent(&format!("https://{host}{path}")).into_response();
     }

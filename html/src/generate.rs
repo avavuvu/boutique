@@ -1,10 +1,6 @@
-
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote, ToTokens};
-use syn::{
-    ext::IdentExt, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Brace,
-    token::Comma, Expr, Local, Path,
-};
+use quote::{ToTokens, quote};
+use syn::{Expr, Local, Path, ext::IdentExt, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Brace, token::Comma};
 
 use crate::{ast::*, escape};
 
@@ -123,14 +119,7 @@ impl Generator {
         }});
     }
 
-    fn component(
-        &self,
-        path: Path,
-        args: Punctuated<ComponentArg, Comma>,
-        attrs: Vec<Attribute>,
-        body: ElementBody,
-        build: &mut Builder,
-    ) {
+    fn component(&self, path: Path, args: Punctuated<ComponentArg, Comma>, attrs: Vec<Attribute>, body: ElementBody, build: &mut Builder) {
         let output_ident = &self.output_ident;
         let crate_path = &self.crate_path;
         let span = path.span();
@@ -141,8 +130,15 @@ impl Generator {
         for arg in args {
             match arg {
                 ComponentArg::Positional(expr) => positional.push(expr),
-                ComponentArg::Named { name, maybe: None, value, .. } => named.push(quote!(.#name(#value))),
-                ComponentArg::Named { name, maybe: Some(_), value, .. } => {
+                ComponentArg::Named {
+                    name, maybe: None, value, ..
+                } => named.push(quote!(.#name(#value))),
+                ComponentArg::Named {
+                    name,
+                    maybe: Some(_),
+                    value,
+                    ..
+                } => {
                     let setter = Ident::new(&format!("maybe_{}", name.unraw()), name.span());
                     named.push(quote!(.#setter(#value)));
                 }
@@ -324,9 +320,15 @@ impl Generator {
         let (classes, id, named_attrs, spreads) = split_attrs(attrs);
 
         let class_attrs = named_attrs.iter().filter(|(name, _)| name.to_string() == "class").count();
-        let merged_names: Vec<String> =
-            named_attrs.iter().map(|(name, _)| name.to_string()).filter(|name| merges(name)).collect();
-        let repeated = merged_names.iter().enumerate().any(|(index, name)| merged_names[..index].contains(name));
+        let merged_names: Vec<String> = named_attrs
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .filter(|name| merges(name))
+            .collect();
+        let repeated = merged_names
+            .iter()
+            .enumerate()
+            .any(|(index, name)| merged_names[..index].contains(name));
         if !spreads.is_empty() || repeated || class_attrs > 1 || (class_attrs == 1 && !classes.is_empty()) {
             self.attrs_merged(classes, id, named_attrs, spreads, build);
             return;
@@ -398,9 +400,7 @@ impl Generator {
                     let escaped = escaped(&name.to_string());
                     quote!(#crate_path::__private::push_class(&mut #class, #escaped);)
                 }
-                HtmlNameOrMarkup::Markup(markup) => {
-                    class_part(crate_path, &class, |generator, build| generator.markup(markup, build))
-                }
+                HtmlNameOrMarkup::Markup(markup) => class_part(crate_path, &class, |generator, build| generator.markup(markup, build)),
             };
             class_parts.push(match toggler {
                 Some(cond) => quote!(if (#cond) { #push }),
@@ -435,18 +435,14 @@ impl Generator {
             }
             match attr_type {
                 AttributeType::Normal { value, .. } => {
-                    class_parts.push(class_part(crate_path, &class, |generator, build| {
-                        generator.markup(value, build)
-                    }));
+                    class_parts.push(class_part(crate_path, &class, |generator, build| generator.markup(value, build)));
                 }
                 AttributeType::Optional {
                     toggler: Toggler { cond, .. },
                     ..
                 } => {
                     let inner_value: Expr = parse_quote!(inner_value);
-                    let push = class_part(crate_path, &class, |generator, build| {
-                        generator.splice(inner_value.clone(), build)
-                    });
+                    let push = class_part(crate_path, &class, |generator, build| generator.splice(inner_value.clone(), build));
                     class_parts.push(quote!(if let Some(#inner_value) = (#cond) { #push }));
                 }
                 AttributeType::Empty(_) => {}
@@ -562,11 +558,7 @@ impl Generator {
         }
     }
 
-    fn control_flow_if_or_block<E: Into<Element>>(
-        &self,
-        if_or_block: IfOrBlock<E>,
-        build: &mut Builder,
-    ) {
+    fn control_flow_if_or_block<E: Into<Element>>(&self, if_or_block: IfOrBlock<E>, build: &mut Builder) {
         match if_or_block {
             IfOrBlock::If(if_) => self.control_flow_if(if_, build),
             IfOrBlock::Block(block) => self.block(block, build),
@@ -592,15 +584,7 @@ impl Generator {
         self.block(body, build);
     }
 
-    fn control_flow_while<E: Into<Element>>(
-        &self,
-        WhileExpr {
-            while_token,
-            cond,
-            body,
-        }: WhileExpr<E>,
-        build: &mut Builder,
-    ) {
+    fn control_flow_while<E: Into<Element>>(&self, WhileExpr { while_token, cond, body }: WhileExpr<E>, build: &mut Builder) {
         build.push_tokens(quote!(#while_token #cond));
         self.block(body, build);
     }
@@ -633,9 +617,7 @@ impl Generator {
                 self.block(
                     Block {
                         brace_token: Brace(Span::call_site()),
-                        markups: Markups {
-                            markups: vec![body],
-                        },
+                        markups: Markups { markups: vec![body] },
                     },
                     &mut build,
                 );
@@ -719,7 +701,11 @@ fn rendered(
 }
 
 fn class_part(crate_path: &TokenStream, class: &Ident, write: impl FnOnce(&Generator, &mut Builder)) -> TokenStream {
-    rendered(crate_path, write, |part| quote!(#crate_path::__private::push_class(&mut #class, &#part);))
+    rendered(
+        crate_path,
+        write,
+        |part| quote!(#crate_path::__private::push_class(&mut #class, &#part);),
+    )
 }
 
 fn component_function(path: &Path) -> Path {
@@ -747,9 +733,7 @@ fn split_attrs(
 
     for attr in attrs {
         match attr {
-            Attribute::Class { name, toggler, .. } => {
-                classes.push((name, toggler.map(|toggler| toggler.cond)))
-            }
+            Attribute::Class { name, toggler, .. } => classes.push((name, toggler.map(|toggler| toggler.cond))),
             Attribute::Id { name, .. } => id = Some(name),
             Attribute::Named { name, attr_type } => named_attrs.push((name, attr_type)),
             Attribute::Spread { expr, .. } => spreads.push(expr),

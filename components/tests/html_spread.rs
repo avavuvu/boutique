@@ -96,7 +96,10 @@ fn dynamic_class_parts_are_escaped() {
 #[test]
 fn attributes_keep_their_order() {
     let result = html! { a.button #go href="/a" (..attrs!(rel = "next", class = "big")) title="t" {} };
-    assert_eq!(result.into_string(), r#"<a class="button big" id="go" href="/a" title="t" rel="next"></a>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<a class="button big" id="go" href="/a" title="t" rel="next"></a>"#
+    );
 }
 
 #[test]
@@ -115,7 +118,10 @@ fn spread_on_div_shorthand_and_in_control_flow() {
             .row (..attrs!("data-item" = item)) {}
         }
     };
-    assert_eq!(result.into_string(), r#"<div class="row" data-item="x"></div><div class="row" data-item="y"></div>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<div class="row" data-item="x"></div><div class="row" data-item="y"></div>"#
+    );
 }
 
 #[test]

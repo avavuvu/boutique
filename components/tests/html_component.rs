@@ -4,13 +4,7 @@ use bq_components::{
 };
 
 #[component]
-fn card(
-    #[positional] title: &str,
-    subtitle: Option<&str>,
-    wide: bool,
-    attrs: Attrs,
-    children: Markup,
-) -> Markup {
+fn card(#[positional] title: &str, subtitle: Option<&str>, wide: bool, attrs: Attrs, children: Markup) -> Markup {
     html! {
         section.card.wide[wide] (..attrs) {
             h2 { (title) }
@@ -59,7 +53,10 @@ fn positional_and_children() {
 fn named_arguments() {
     let wide = true;
     let result = html! { Card("Hello", subtitle = "sub", wide = wide) {} };
-    assert_eq!(result.into_string(), r#"<section class="card wide"><h2>Hello</h2><p>sub</p></section>"#);
+    assert_eq!(
+        result.into_string(),
+        r#"<section class="card wide"><h2>Hello</h2><p>sub</p></section>"#
+    );
 }
 
 #[test]
@@ -206,7 +203,10 @@ fn capitalised_function_needs_no_alias() {
 #[test]
 fn exported_aliases() {
     let result = html! { bq_components::Input("q", label = "Search") data-x="1"; }.into_string();
-    assert!(result.contains(r#"<input id="q" name="q" type="text" aria-describedby="q-error" data-x="1">"#), "{result}");
+    assert!(
+        result.contains(r#"<input id="q" name="q" type="text" aria-describedby="q-error" data-x="1">"#),
+        "{result}"
+    );
 }
 
 #[test]

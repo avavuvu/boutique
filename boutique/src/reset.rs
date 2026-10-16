@@ -43,7 +43,10 @@ fn decode_hex(hex: &str) -> Option<Vec<u8>> {
     if !hex.len().is_multiple_of(2) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
-    (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok()).collect()
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+        .collect()
 }
 
 /// returns `None` for an unknown email. callers must show the same message
@@ -59,18 +62,21 @@ pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<O
 
 pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> String {
     let expires = (Utc::now() + chrono::Duration::hours(state.config.reset_ttl_hours)).timestamp();
-    let signature = mac(state.secret(), user.id(), expires, user.password_hash()).finalize().into_bytes();
+    let signature = mac(state.secret(), user.id(), expires, user.password_hash())
+        .finalize()
+        .into_bytes();
     format!("{}.{expires}.{}", encode_hex(user.id().as_bytes()), encode_hex(&signature))
 }
 
 pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Result<U, ResetError> {
     let mut parts = token.split('.');
-    let (Some(user_id), Some(expires), Some(signature), None) = (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
+    let (Some(user_id), Some(expires), Some(signature), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
         return Err(ResetError::InvalidToken);
     };
 
-    let user_id = decode_hex(user_id).and_then(|bytes| String::from_utf8(bytes).ok()).ok_or(ResetError::InvalidToken)?;
+    let user_id = decode_hex(user_id)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or(ResetError::InvalidToken)?;
     let expires: i64 = expires.parse().map_err(|_| ResetError::InvalidToken)?;
     let signature = decode_hex(signature).ok_or(ResetError::InvalidToken)?;
 
@@ -183,7 +189,11 @@ mod tests {
     }
 
     fn user(id: &str) -> User {
-        User { id: id.into(), email: format!("{id}@example.com"), password_hash: "hash".into() }
+        User {
+            id: id.into(),
+            email: format!("{id}@example.com"),
+            password_hash: "hash".into(),
+        }
     }
 
     fn state() -> AuthState<User> {

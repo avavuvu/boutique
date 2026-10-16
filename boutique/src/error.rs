@@ -30,7 +30,10 @@ pub struct ErrorReport {
 
 impl ErrorReport {
     pub fn new(status: StatusCode) -> Self {
-        Self { status, messages: Vec::new() }
+        Self {
+            status,
+            messages: Vec::new(),
+        }
     }
 }
 
@@ -38,7 +41,11 @@ impl<S: Send + Sync> FromRequestParts<S> for ErrorReport {
     type Rejection = StatusCode;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts.extensions.get::<ErrorReport>().cloned().ok_or(StatusCode::INTERNAL_SERVER_ERROR)
+        parts
+            .extensions
+            .get::<ErrorReport>()
+            .cloned()
+            .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
 
@@ -47,7 +54,12 @@ fn validation_fields(errors: &ValidationErrors) -> Vec<(String, String)> {
         .field_errors()
         .into_iter()
         .filter_map(|(field, errors)| {
-            let message = errors.first()?.message.as_ref().map(|message| message.to_string()).unwrap_or_else(|| format!("Invalid {field}"));
+            let message = errors
+                .first()?
+                .message
+                .as_ref()
+                .map(|message| message.to_string())
+                .unwrap_or_else(|| format!("Invalid {field}"));
             Some((field.to_string(), message))
         })
         .collect();
@@ -56,7 +68,10 @@ fn validation_fields(errors: &ValidationErrors) -> Vec<(String, String)> {
 }
 
 fn field_fragments(fields: &[(String, String)]) -> Markup {
-    let fields: Vec<(&str, Option<&str>)> = fields.iter().map(|(field, message)| (field.as_str(), Some(message.as_str()))).collect();
+    let fields: Vec<(&str, Option<&str>)> = fields
+        .iter()
+        .map(|(field, message)| (field.as_str(), Some(message.as_str())))
+        .collect();
     fragments::field_errors(&fields)
 }
 

@@ -1,16 +1,10 @@
 pub mod manifest;
 
-use axum::{
-    Router,
-    http::header,
-    response::IntoResponse,
-    routing::get,
-};
+use axum::{Router, http::header, response::IntoResponse, routing::get};
 
 pub const HTMX_PATH: &str = concat!("/boutique/htmx-", env!("BOUTIQUE_HTMX_HASH"), ".js");
 pub const BUILD_ROUTE: &str = "/build";
 pub const BUILD_DIR: &str = "public/build";
-
 
 fn script(body: &'static str) -> impl IntoResponse {
     (
@@ -23,6 +17,5 @@ fn script(body: &'static str) -> impl IntoResponse {
 }
 
 pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
-    Router::new()
-        .route(HTMX_PATH, get(|| async { script(include_str!("../../assets/htmx.js")) }))
+    Router::new().route(HTMX_PATH, get(|| async { script(include_str!("../../assets/htmx.js")) }))
 }

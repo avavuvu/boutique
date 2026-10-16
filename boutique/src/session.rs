@@ -62,7 +62,12 @@ pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Sessio
     };
     state.store.create_session(session).await.map_err(StoreError::from_debug)?;
 
-    Ok(Session(CookieJar::new().add(cookies::make(cookies::SESSION, token, ttl, &state.config))))
+    Ok(Session(CookieJar::new().add(cookies::make(
+        cookies::SESSION,
+        token,
+        ttl,
+        &state.config,
+    ))))
 }
 
 pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Session {

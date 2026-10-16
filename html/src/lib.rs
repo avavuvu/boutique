@@ -18,10 +18,7 @@ pub fn expand(input: TokenStream, crate_path: TokenStream) -> TokenStream {
     let size_hint = input.to_string().len();
 
     let mut diagnostics = Vec::new();
-    let mut markups = match Parser::parse2(
-        |input: ParseStream| ast::Markups::diagnostic_parse(input, &mut diagnostics),
-        input,
-    ) {
+    let mut markups = match Parser::parse2(|input: ParseStream| ast::Markups::diagnostic_parse(input, &mut diagnostics), input) {
         Ok(data) => data,
         Err(err) => {
             let err = err.to_compile_error();

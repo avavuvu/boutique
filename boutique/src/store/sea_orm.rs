@@ -2,12 +2,9 @@ use std::marker::PhantomData;
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, JoinType, ModelTrait,
-    QueryFilter, QuerySelect, TransactionTrait,
-    sea_query::{
-        Alias, ColumnDef, ForeignKey, ForeignKeyAction, Index, IndexCreateStatement, IntoIden, Table,
-        TableCreateStatement,
-    },
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, JoinType, ModelTrait, QueryFilter, QuerySelect,
+    TransactionTrait,
+    sea_query::{Alias, ColumnDef, ForeignKey, ForeignKeyAction, Index, IndexCreateStatement, IntoIden, Table, TableCreateStatement},
 };
 
 use crate::store::{AuthStore, NewSession};
@@ -42,15 +39,13 @@ impl<U, S> Clone for SeaOrmStore<U, S> {
     }
 }
 
-fn set_timestamp<A: ActiveModelTrait>(
-    active: &mut A,
-    column: <A::Entity as EntityTrait>::Column,
-    at: DateTime<Utc>,
-) -> Result<(), DbErr>
+fn set_timestamp<A: ActiveModelTrait>(active: &mut A, column: <A::Entity as EntityTrait>::Column, at: DateTime<Utc>) -> Result<(), DbErr>
 where
     <A::Entity as EntityTrait>::Column: Copy,
 {
-    active.try_set(column, at.fixed_offset().into()).or_else(|_| active.try_set(column, at.into()))
+    active
+        .try_set(column, at.fixed_offset().into())
+        .or_else(|_| active.try_set(column, at.into()))
 }
 
 impl<U, S> AuthStore<U::Model> for SeaOrmStore<U, S>
@@ -140,5 +135,9 @@ pub fn create_sessions_table(users: impl IntoIden, users_id: impl IntoIden) -> T
 }
 
 pub fn create_sessions_user_id_index() -> IndexCreateStatement {
-    Index::create().name("idx_sessions_user_id").table(Alias::new("sessions")).col(Alias::new("user_id")).to_owned()
+    Index::create()
+        .name("idx_sessions_user_id")
+        .table(Alias::new("sessions"))
+        .col(Alias::new("user_id"))
+        .to_owned()
 }

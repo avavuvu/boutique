@@ -55,7 +55,6 @@ impl Head {
         self
     }
 
-
     pub fn module(mut self, src: impl Into<String>) -> Self {
         self.scripts.push(src.into());
         self
@@ -91,7 +90,6 @@ impl Head {
     pub fn htmx(self) -> Self {
         self.module(assets::HTMX_PATH)
     }
-
 
     pub fn seo(mut self, metadata: Metadata) -> Self {
         self.metadata = Some(metadata);

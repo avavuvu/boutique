@@ -66,7 +66,10 @@ pub struct Generator {
 
 impl Generator {
     pub fn new(out: impl Into<PathBuf>) -> Self {
-        Self { out: out.into(), roots: Vec::new() }
+        Self {
+            out: out.into(),
+            roots: Vec::new(),
+        }
     }
 
     pub fn source(mut self, dir: impl Into<PathBuf>) -> Self {
@@ -78,7 +81,10 @@ impl Generator {
     }
 
     pub fn boutique(mut self) -> Self {
-        self.roots.push(Root { dir: None, import: format!("./{BOUTIQUE}") });
+        self.roots.push(Root {
+            dir: None,
+            import: format!("./{BOUTIQUE}"),
+        });
         self
     }
 
@@ -177,8 +183,13 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
 }
 
 fn walk(index: &Index) -> (Vec<Usage>, Vec<String>, Vec<String>) {
-    let components: Vec<usize> =
-        index.functions.iter().enumerate().filter(|(_, function)| function.component).map(|(function, _)| function).collect();
+    let components: Vec<usize> = index
+        .functions
+        .iter()
+        .enumerate()
+        .filter(|(_, function)| function.component)
+        .map(|(function, _)| function)
+        .collect();
 
     let called = {
         let mut probe = Walker::new(index);
@@ -234,7 +245,10 @@ fn declarations(index: &Index, errors: &mut Vec<String>) -> BTreeMap<String, Dec
             let clash = if existing.name == declaration.name {
                 format!("two setups are named \"{}\"", declaration.name)
             } else {
-                format!("the setups \"{}\" and \"{}\" both have the TypeScript type {key}", existing.name, declaration.name)
+                format!(
+                    "the setups \"{}\" and \"{}\" both have the TypeScript type {key}",
+                    existing.name, declaration.name
+                )
             };
             errors.push(format!(
                 "{}: {clash}: `{}` at {} and `{}` at {}; rename one with #[component(setup = \"…\")]",
@@ -246,7 +260,6 @@ fn declarations(index: &Index, errors: &mut Vec<String>) -> BTreeMap<String, Dec
     }
     by_type
 }
-
 
 fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
     let mut out = format!("import type {{ Setup }} from \"{runtime}\";\n\n");
@@ -275,7 +288,11 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
                 }
             })
             .collect();
-        let refs = if refs.is_empty() { "{}".to_string() } else { format!("{{ {} }}", refs.join("; ")) };
+        let refs = if refs.is_empty() {
+            "{}".to_string()
+        } else {
+            format!("{{ {} }}", refs.join("; "))
+        };
 
         if setup.handlers.is_empty() {
             out.push_str(&format!("export type {name} = Setup<{tags}, {refs}>;\n"));
@@ -296,7 +313,10 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
                 format!("{handler}: {}", uses.join(" | "))
             })
             .collect();
-        out.push_str(&format!("export type {name} = Setup<{tags}, {refs}, {{ {} }}>;\n", handlers.join("; ")));
+        out.push_str(&format!(
+            "export type {name} = Setup<{tags}, {refs}, {{ {} }}>;\n",
+            handlers.join("; ")
+        ));
     }
 
     out
@@ -344,8 +364,10 @@ fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged:
 }
 
 fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>) -> BTreeMap<String, Merged> {
-    let types: HashMap<&str, &str> =
-        declarations.iter().map(|(key, declaration)| (declaration.name.as_str(), key.as_str())).collect();
+    let types: HashMap<&str, &str> = declarations
+        .iter()
+        .map(|(key, declaration)| (declaration.name.as_str(), key.as_str()))
+        .collect();
     let mut merged: BTreeMap<String, Merged> = BTreeMap::new();
 
     for usage in usages {
@@ -391,7 +413,6 @@ fn merge(usages: &[Usage], declarations: &BTreeMap<String, Declaration>) -> BTre
 
     merged
 }
-
 
 fn add_tags(tags: &Tags, into: &mut BTreeSet<String>, any: &mut bool) {
     match tags {
@@ -463,7 +484,10 @@ fn is_rust(path: &str) -> bool {
 
 fn write_boutique(dir: &Path, kit: bool) {
     let mut keep = BTreeSet::new();
-    for (path, text) in bq_components::FILES.iter().filter(|(path, _)| !is_rust(path) && (kit || *path == RUNTIME_FILE)) {
+    for (path, text) in bq_components::FILES
+        .iter()
+        .filter(|(path, _)| !is_rust(path) && (kit || *path == RUNTIME_FILE))
+    {
         let target = dir.join(path);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).unwrap_or_else(|error| panic!("create {}: {error}", parent.display()));

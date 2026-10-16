@@ -28,7 +28,11 @@ fn is_cross_origin<B>(request: &Request<B>) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return false;
     };
-    let authority = origin.to_str().ok().and_then(|origin| origin.split_once("://")).map(|(_, authority)| authority);
+    let authority = origin
+        .to_str()
+        .ok()
+        .and_then(|origin| origin.split_once("://"))
+        .map(|(_, authority)| authority);
     authority.is_none() || authority != headers.get(header::HOST).and_then(|host| host.to_str().ok())
 }
 
@@ -98,13 +102,22 @@ fn is_error(status: StatusCode) -> bool {
 
 fn wants_page(headers: &HeaderMap) -> bool {
     !htmx::is_htmx(headers)
-        && headers.get(header::ACCEPT).and_then(|value| value.to_str().ok()).is_some_and(|value| value.contains("text/html"))
+        && headers
+            .get(header::ACCEPT)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("text/html"))
 }
 
 fn is_html(headers: &HeaderMap) -> bool {
-    headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).is_some_and(|value| value.starts_with("text/html"))
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/html"))
 }
 
 fn is_plain_text(headers: &HeaderMap) -> bool {
-    headers.get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).is_some_and(|value| value.starts_with("text/plain"))
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/plain"))
 }

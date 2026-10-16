@@ -52,7 +52,11 @@ struct UploadError {
 
 impl Cloudinary {
     pub fn new(cloud_name: impl Into<String>, api_key: impl Into<String>, api_secret: impl Into<String>) -> Self {
-        Self { cloud_name: cloud_name.into(), api_key: api_key.into(), api_secret: api_secret.into() }
+        Self {
+            cloud_name: cloud_name.into(),
+            api_key: api_key.into(),
+            api_secret: api_secret.into(),
+        }
     }
 
     pub fn from_env() -> Option<Self> {
@@ -60,7 +64,11 @@ impl Cloudinary {
             return Self::from_url(&raw);
         }
 
-        match (env::var("CLOUDINARY_CLOUD_NAME"), env::var("CLOUDINARY_API_KEY"), env::var("CLOUDINARY_API_SECRET")) {
+        match (
+            env::var("CLOUDINARY_CLOUD_NAME"),
+            env::var("CLOUDINARY_API_KEY"),
+            env::var("CLOUDINARY_API_SECRET"),
+        ) {
             (Ok(cloud_name), Ok(api_key), Ok(api_secret)) => Some(Self::new(cloud_name, api_key, api_secret)),
             _ => None,
         }
@@ -82,13 +90,20 @@ impl Cloudinary {
     }
 
     pub fn url(&self, public_id: &str, transform: &str) -> String {
-        format!("https://res.cloudinary.com/{}/image/upload/{transform}/{public_id}", self.cloud_name)
+        format!(
+            "https://res.cloudinary.com/{}/image/upload/{transform}/{public_id}",
+            self.cloud_name
+        )
     }
 
     pub fn sign(&self, parameters: &[(&str, &str)]) -> String {
         let mut sorted: Vec<&(&str, &str)> = parameters.iter().collect();
         sorted.sort_by(|left, right| left.0.cmp(right.0));
-        let joined = sorted.iter().map(|(name, value)| format!("{name}={value}")).collect::<Vec<_>>().join("&");
+        let joined = sorted
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join("&");
         let digest = Sha1::digest(format!("{joined}{}", self.api_secret).as_bytes());
         format!("{digest:x}")
     }
@@ -96,7 +111,12 @@ impl Cloudinary {
     pub fn signature(&self) -> Signature {
         let timestamp = chrono::Utc::now().timestamp();
         let signature = self.sign(&[("timestamp", &timestamp.to_string())]);
-        Signature { signature, timestamp, api_key: self.api_key.clone(), cloud_name: self.cloud_name.clone() }
+        Signature {
+            signature,
+            timestamp,
+            api_key: self.api_key.clone(),
+            cloud_name: self.cloud_name.clone(),
+        }
     }
 
     pub async fn upload(&self, bytes: Vec<u8>, public_id: &str, content_type: &str) -> Result<String, Error> {

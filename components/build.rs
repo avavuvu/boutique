@@ -16,7 +16,11 @@ fn main() {
         .iter()
         .map(|file| {
             let relative = file.strip_prefix(&src).expect("file under src");
-            relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/")
+            relative
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
         })
         .collect();
     paths.sort();
@@ -24,7 +28,9 @@ fn main() {
     let mut out = String::from("pub static FILES: &[(&str, &str)] = &[\n");
     for path in &paths {
         let full = format!("/src/{path}");
-        out.push_str(&format!("    ({path:?}, include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {full:?}))),\n"));
+        out.push_str(&format!(
+            "    ({path:?}, include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {full:?}))),\n"
+        ));
     }
     out.push_str("];\n");
 
@@ -38,7 +44,10 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
         let path = entry.unwrap_or_else(|error| panic!("read {}: {error}", dir.display())).path();
         if path.is_dir() {
             collect(&path, out);
-        } else if path.extension().is_some_and(|extension| EXTENSIONS.iter().any(|known| extension == *known)) {
+        } else if path
+            .extension()
+            .is_some_and(|extension| EXTENSIONS.iter().any(|known| extension == *known))
+        {
             out.push(path);
         }
     }

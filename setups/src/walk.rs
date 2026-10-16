@@ -5,8 +5,8 @@ use std::{
 
 use bq_html::{
     ast::{
-        Attribute, AttributeType, ComponentArg, ControlFlowKind, DiagnosticParse, Element, ElementBody, ElementName, IfOrBlock,
-        Markup, Markups,
+        Attribute, AttributeType, ComponentArg, ControlFlowKind, DiagnosticParse, Element, ElementBody, ElementName, IfOrBlock, Markup,
+        Markups,
     },
     proc_macro2_diagnostics::Diagnostic,
 };
@@ -66,7 +66,10 @@ struct Scope {
 
 impl Scope {
     fn nearest(&self) -> Vec<usize> {
-        self.path.first().map(|element| element.iter().map(|owner| owner.usage).collect()).unwrap_or_default()
+        self.path
+            .first()
+            .map(|element| element.iter().map(|owner| owner.usage).collect())
+            .unwrap_or_default()
     }
     fn flagged(&self, optional: bool, many: bool) -> Scope {
         let mut scope = self.clone();
@@ -121,7 +124,11 @@ struct Frame<'c> {
 
 pub fn parse(tokens: TokenStream) -> Option<Markups<Element>> {
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
-    Parser::parse2(|input: syn::parse::ParseStream| Markups::diagnostic_parse(input, &mut diagnostics), tokens).ok()
+    Parser::parse2(
+        |input: syn::parse::ParseStream| Markups::diagnostic_parse(input, &mut diagnostics),
+        tokens,
+    )
+    .ok()
 }
 
 pub fn html_blocks(tokens: TokenStream, out: &mut Vec<TokenStream>) {
@@ -172,7 +179,12 @@ impl<'a> Walker<'a> {
 
     pub fn block(&mut self, block: usize) {
         let block = &self.index.blocks[block];
-        let cx = Cx { scope: Scope::default(), frame: None, file: block.file, function: block.function };
+        let cx = Cx {
+            scope: Scope::default(),
+            frame: None,
+            file: block.file,
+            function: block.function,
+        };
         self.markups(&block.markups, &cx);
     }
 
@@ -192,12 +204,22 @@ impl<'a> Walker<'a> {
     }
 
     pub fn component_alone(&mut self, function: usize) {
-        let cx = Cx { scope: Scope::default(), frame: None, file: self.index.functions[function].file, function: Some(function) };
+        let cx = Cx {
+            scope: Scope::default(),
+            frame: None,
+            file: self.index.functions[function].file,
+            function: Some(function),
+        };
         self.function_blocks(function, &cx);
     }
 
     pub fn unspliced_alone(&mut self, function: usize) {
-        let cx = Cx { scope: Scope::default(), frame: None, file: self.index.functions[function].file, function: Some(function) };
+        let cx = Cx {
+            scope: Scope::default(),
+            frame: None,
+            file: self.index.functions[function].file,
+            function: Some(function),
+        };
         self.unspliced_blocks(function, &cx);
     }
 
@@ -254,7 +276,10 @@ impl<'a> Walker<'a> {
             Markup::Element(element) => self.element(element, cx),
             Markup::ControlFlow(control_flow) => match &control_flow.kind {
                 ControlFlowKind::If(if_) => {
-                    let branch = Cx { scope: cx.scope.flagged(true, false), ..cx.clone() };
+                    let branch = Cx {
+                        scope: cx.scope.flagged(true, false),
+                        ..cx.clone()
+                    };
                     let mut next = Some(if_);
                     while let Some(if_) = next.take() {
                         self.markups(&if_.then_branch.markups, &branch);
@@ -266,15 +291,24 @@ impl<'a> Walker<'a> {
                     }
                 }
                 ControlFlowKind::For(for_) => {
-                    let each = Cx { scope: cx.scope.flagged(false, true), ..cx.clone() };
+                    let each = Cx {
+                        scope: cx.scope.flagged(false, true),
+                        ..cx.clone()
+                    };
                     self.markups(&for_.body.markups, &each);
                 }
                 ControlFlowKind::While(while_) => {
-                    let branch = Cx { scope: cx.scope.flagged(true, false), ..cx.clone() };
+                    let branch = Cx {
+                        scope: cx.scope.flagged(true, false),
+                        ..cx.clone()
+                    };
                     self.markups(&while_.body.markups, &branch);
                 }
                 ControlFlowKind::Match(match_) => {
-                    let arm = Cx { scope: cx.scope.flagged(true, false), ..cx.clone() };
+                    let arm = Cx {
+                        scope: cx.scope.flagged(true, false),
+                        ..cx.clone()
+                    };
                     for match_arm in &match_.arms {
                         self.markup(&match_arm.body, &arm);
                     }
@@ -292,7 +326,13 @@ impl<'a> Walker<'a> {
         if let Some(frame) = cx.frame.filter(|_| is_children(expr)) {
             frame.children_used.set(true);
             if let Some(children) = frame.children {
-                self.markups(children, &Cx { scope: cx.scope.clone(), ..frame.caller.clone() });
+                self.markups(
+                    children,
+                    &Cx {
+                        scope: cx.scope.clone(),
+                        ..frame.caller.clone()
+                    },
+                );
             }
             return;
         }
@@ -302,7 +342,13 @@ impl<'a> Walker<'a> {
             && let Some((_, value, used)) = frame.args.iter().find(|(arg, ..)| *arg == name)
         {
             used.set(true);
-            self.nested(value, &Cx { scope: cx.scope.clone(), ..frame.caller.clone() });
+            self.nested(
+                value,
+                &Cx {
+                    scope: cx.scope.clone(),
+                    ..frame.caller.clone()
+                },
+            );
             return;
         }
 
@@ -314,7 +360,12 @@ impl<'a> Walker<'a> {
         {
             self.followed.insert(function);
             self.stack.push(function);
-            let followed = Cx { frame: None, file: self.index.functions[function].file, function: Some(function), ..cx.clone() };
+            let followed = Cx {
+                frame: None,
+                file: self.index.functions[function].file,
+                function: Some(function),
+                ..cx.clone()
+            };
             self.function_blocks(function, &followed);
             self.stack.pop();
         }
@@ -337,7 +388,13 @@ impl<'a> Walker<'a> {
         finder.visit_expr(expr);
         for (tokens, optional, many) in finder.blocks {
             if let Some(markups) = parse(tokens) {
-                self.markups(&markups, &Cx { scope: cx.scope.flagged(optional, many), ..cx.clone() });
+                self.markups(
+                    &markups,
+                    &Cx {
+                        scope: cx.scope.flagged(optional, many),
+                        ..cx.clone()
+                    },
+                );
             }
         }
     }
@@ -372,12 +429,21 @@ impl<'a> Walker<'a> {
         let inner = self.place(&tags, own, &outside, cx);
 
         if let ElementBody::Block(block) = &element.body {
-            self.markups(&block.markups, &Cx { scope: inner, ..cx.clone() });
+            self.markups(
+                &block.markups,
+                &Cx {
+                    scope: inner,
+                    ..cx.clone()
+                },
+            );
         }
     }
 
     fn component<'e>(&mut self, name: &str, element: &'e Element, args: Vec<(String, &'e Expr, Cell<bool>)>, location: &str, cx: &Cx) {
-        let mut outside = vec![Outside { attrs: self.call_attrs(&element.attrs, location, cx.function), function: cx.function }];
+        let mut outside = vec![Outside {
+            attrs: self.call_attrs(&element.attrs, location, cx.function),
+            function: cx.function,
+        }];
         if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. }))
             && let Some(frame) = cx.frame
         {
@@ -389,14 +455,22 @@ impl<'a> Walker<'a> {
             ElementBody::Void(_) => None,
         };
 
-        let function = self.lookup(name, cx.file, true, location).filter(|function| !self.stack.contains(function));
+        let function = self
+            .lookup(name, cx.file, true, location)
+            .filter(|function| !self.stack.contains(function));
         let Some(function) = function else {
             for (_, value, _) in &args {
                 self.nested(value, cx);
             }
             let inner = self.place(&Tags::Unknown, CallAttrs::default(), &outside, cx);
             if let Some(children) = children {
-                self.markups(children, &Cx { scope: inner, ..cx.clone() });
+                self.markups(
+                    children,
+                    &Cx {
+                        scope: inner,
+                        ..cx.clone()
+                    },
+                );
             }
             return;
         };
@@ -460,7 +534,9 @@ impl<'a> Walker<'a> {
                 }
                 attribute if attribute.starts_with("bq-on:") => {
                     let value = match attr_type {
-                        AttributeType::Normal { value: Markup::Lit(lit), .. } => lit.lit.value(),
+                        AttributeType::Normal {
+                            value: Markup::Lit(lit), ..
+                        } => lit.lit.value(),
                         AttributeType::Empty(None) => String::new(),
                         _ => {
                             self.errors.push(format!(
@@ -497,7 +573,17 @@ impl<'a> Walker<'a> {
         let entry = self.create(tags, setups);
         let mut inner = cx.scope.clone();
         if !entry.is_empty() {
-            inner.path.insert(0, entry.into_iter().map(|usage| Owner { usage, optional: false, many: false }).collect());
+            inner.path.insert(
+                0,
+                entry
+                    .into_iter()
+                    .map(|usage| Owner {
+                        usage,
+                        optional: false,
+                        many: false,
+                    })
+                    .collect(),
+            );
         }
 
         for (on, location) in own.ons {
@@ -515,7 +601,12 @@ impl<'a> Walker<'a> {
         setups
             .into_iter()
             .map(|name| {
-                self.usages.push(Usage { name, tags: tags.clone(), refs: Vec::new(), handlers: Vec::new() });
+                self.usages.push(Usage {
+                    name,
+                    tags: tags.clone(),
+                    refs: Vec::new(),
+                    handlers: Vec::new(),
+                });
                 self.usages.len() - 1
             })
             .collect()
@@ -576,7 +667,12 @@ impl<'a> Walker<'a> {
         let Some(owner) = self.owner(on.setup.as_deref(), scope, &text, &location, function) else {
             return;
         };
-        self.usages[owner].handlers.push(HandlerUse { name: on.key, event: on.event, target: on.target, tags: tags.clone() });
+        self.usages[owner].handlers.push(HandlerUse {
+            name: on.key,
+            event: on.event,
+            target: on.target,
+            tags: tags.clone(),
+        });
     }
 
     fn reference(&mut self, reference: RefName, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
@@ -598,17 +694,26 @@ impl<'a> Walker<'a> {
         let candidates = table.get(name)?;
         let root = self.index.files[file].root;
 
-        let in_file: Vec<usize> = candidates.iter().copied().filter(|&c| self.index.functions[c].file == file).collect();
+        let in_file: Vec<usize> = candidates
+            .iter()
+            .copied()
+            .filter(|&c| self.index.functions[c].file == file)
+            .collect();
         if let Some(&first) = in_file.first() {
             return Some(first);
         }
-        let in_root: Vec<usize> =
-            candidates.iter().copied().filter(|&c| self.index.files[self.index.functions[c].file].root == root).collect();
+        let in_root: Vec<usize> = candidates
+            .iter()
+            .copied()
+            .filter(|&c| self.index.files[self.index.functions[c].file].root == root)
+            .collect();
         match (in_root.as_slice(), candidates.as_slice()) {
             ([one], _) | ([], [one]) => Some(*one),
             _ => {
-                let places: Vec<&str> =
-                    candidates.iter().map(|&c| self.index.files[self.index.functions[c].file].name.as_str()).collect();
+                let places: Vec<&str> = candidates
+                    .iter()
+                    .map(|&c| self.index.files[self.index.functions[c].file].name.as_str())
+                    .collect();
                 self.warnings.push(format!(
                     "{location}: `{name}` matches more than one function ({}), so bq_setups does not follow it",
                     places.join(", ")
@@ -642,14 +747,19 @@ impl<'a> Walker<'a> {
     }
 
     fn ref_names(&mut self, value: &AttributeType, location: &str) -> Vec<RefName> {
-        let AttributeType::Normal { value: Markup::Lit(lit), .. } = value else {
-            self.errors.push(format!("{location}: bq-ref needs a fixed string, for example bq-ref=\"select\""));
+        let AttributeType::Normal {
+            value: Markup::Lit(lit), ..
+        } = value
+        else {
+            self.errors
+                .push(format!("{location}: bq-ref needs a fixed string, for example bq-ref=\"select\""));
             return Vec::new();
         };
 
         let value = lit.lit.value();
         if value.split_whitespace().next().is_none() {
-            self.errors.push(format!("{location}: bq-ref needs a name, for example bq-ref=\"select\""));
+            self.errors
+                .push(format!("{location}: bq-ref needs a name, for example bq-ref=\"select\""));
         }
 
         let mut names = Vec::new();
@@ -664,7 +774,11 @@ impl<'a> Walker<'a> {
                 ));
                 continue;
             }
-            names.push(RefName { setup: setup.map(str::to_string), name: name.to_lower_camel_case(), text: text.to_string() });
+            names.push(RefName {
+                setup: setup.map(str::to_string),
+                name: name.to_lower_camel_case(),
+                text: text.to_string(),
+            });
         }
         names
     }
@@ -743,7 +857,6 @@ fn called_function(expr: &Expr) -> Option<String> {
     }
 }
 
-
 fn literal_tags(expr: &Expr) -> Tags {
     fn collect(expr: &Expr, out: &mut BTreeSet<String>) -> bool {
         match expr {
@@ -754,9 +867,7 @@ fn literal_tags(expr: &Expr) -> Tags {
             Expr::Paren(paren) => collect(&paren.expr, out),
             Expr::Group(group) => collect(&group.expr, out),
             Expr::Block(block) => tail(&block.block, out),
-            Expr::If(if_) => {
-                tail(&if_.then_branch, out) && if_.else_branch.as_ref().is_some_and(|(_, else_)| collect(else_, out))
-            }
+            Expr::If(if_) => tail(&if_.then_branch, out) && if_.else_branch.as_ref().is_some_and(|(_, else_)| collect(else_, out)),
             Expr::Match(match_) => match_.arms.iter().all(|arm| collect(&arm.body, out)),
             _ => false,
         }
@@ -767,7 +878,11 @@ fn literal_tags(expr: &Expr) -> Tags {
     }
 
     let mut tags = BTreeSet::new();
-    if collect(expr, &mut tags) && !tags.is_empty() { Tags::Known(tags) } else { Tags::Unknown }
+    if collect(expr, &mut tags) && !tags.is_empty() {
+        Tags::Known(tags)
+    } else {
+        Tags::Unknown
+    }
 }
 
 fn unique(items: Vec<String>) -> Vec<String> {

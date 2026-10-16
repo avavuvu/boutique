@@ -88,7 +88,10 @@ fn call_site_setups_merge_with_spread_setups() {
 
 #[test]
 fn setup_and_component_can_share_a_name() {
-    assert_eq!(html! { SaveStatus; }.into_string(), r#"<output bq-setup="save-status">Saved</output>"#);
+    assert_eq!(
+        html! { SaveStatus; }.into_string(),
+        r#"<output bq-setup="save-status">Saved</output>"#
+    );
 }
 
 #[test]

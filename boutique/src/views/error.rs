@@ -8,7 +8,11 @@ use crate::{
 };
 
 pub fn back_url(headers: &HeaderMap) -> &str {
-    headers.get(header::REFERER).and_then(|value| value.to_str().ok()).filter(|value| !value.is_empty()).unwrap_or("/")
+    headers
+        .get(header::REFERER)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("/")
 }
 
 pub fn error_content(report: &ErrorReport, back: &str) -> Markup {

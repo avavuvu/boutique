@@ -29,7 +29,10 @@ fn setup(types: &str, name: &str) -> String {
 
 #[test]
 fn element_with_refs() {
-    let (types, registry, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, registry, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "toggle")]
         fn view() -> Markup {
             html! {
@@ -40,27 +43,42 @@ fn element_with_refs() {
                 }
             }
         }
-    "##)]);
-    assert_eq!(setup(&types, "Toggle"), r#"Setup<"div", { body?: "p"; closeButton: "button"; item: ("li")[] }>"#);
-    assert!(registry.contains(r#"tags: ["div"],"#) && registry.contains(r#"many: ["item"],"#), "{registry}");
+    "##,
+    )]);
+    assert_eq!(
+        setup(&types, "Toggle"),
+        r#"Setup<"div", { body?: "p"; closeButton: "button"; item: ("li")[] }>"#
+    );
+    assert!(
+        registry.contains(r#"tags: ["div"],"#) && registry.contains(r#"many: ["item"],"#),
+        "{registry}"
+    );
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn several_setups_on_one_element() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component] pub fn a(attrs: Attrs, children: Markup) -> Markup { html! { .box bq-setup (..attrs) { (children) } } }
         #[component(setup = "b")]
         fn view() -> Markup { html! { A bq-setup { span bq-ref="a.x b.y" {} } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "A"), r#"Setup<"div", { x: "span" }>"#);
     assert_eq!(setup(&types, "B"), r#"Setup<"div", { y: "span" }>"#);
 
-    let errors = run(&[(0, "a.rs", r##"
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
         #[component] pub fn a(attrs: Attrs, children: Markup) -> Markup { html! { .box bq-setup (..attrs) { (children) } } }
         #[component(setup = "b")]
         fn view() -> Markup { html! { A bq-setup { span bq-ref="x" {} } } }
-    "##)])
+    "##,
+    )])
     .unwrap_err();
     assert_eq!(
         errors,
@@ -84,7 +102,10 @@ const MENU: &str = r##"
 fn a_name_without_a_prefix_goes_to_the_nearest_setup() {
     let (types, registry, warnings) = ok(&[
         (0, "menu.rs", MENU),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "toolbar")]
             fn view() -> Markup {
                 html! {
@@ -96,7 +117,8 @@ fn a_name_without_a_prefix_goes_to_the_nearest_setup() {
                     }
                 }
             }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(
         setup(&types, "Menu"),
@@ -106,7 +128,10 @@ fn a_name_without_a_prefix_goes_to_the_nearest_setup() {
         setup(&types, "Toolbar"),
         r#"Setup<"div", { blockButton: "button"; blockOption: ("button")[] }, { setBlock: { event: "click"; tag: "button" } }>"#
     );
-    assert!(registry.contains("\"menu\": {\n        tags: [\"div\"],\n        many: [],\n"), "{registry}");
+    assert!(
+        registry.contains("\"menu\": {\n        tags: [\"div\"],\n        many: [],\n"),
+        "{registry}"
+    );
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
@@ -114,31 +139,46 @@ fn a_name_without_a_prefix_goes_to_the_nearest_setup() {
 fn a_followed_helper_is_not_an_orphan() {
     let (types, _, warnings) = ok(&[
         (0, "menu.rs", MENU),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "toolbar")]
             fn view() -> Markup { html! { div bq-setup { Menu { (option()) } } } }
             fn option() -> Markup { html! { b bq-ref="toolbar.option" bq-on:click="toolbar.pick" {} } }
-        "##),
+        "##,
+        ),
     ]);
-    assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { option: "b" }, { pick: { event: "click"; tag: "b" } }>"#);
+    assert_eq!(
+        setup(&types, "Toolbar"),
+        r#"Setup<"div", { option: "b" }, { pick: { event: "click"; tag: "b" } }>"#
+    );
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn markup_in_component_arguments_is_walked_where_it_is_spliced() {
     let (types, _, warnings) = ok(&[
-        (0, "label.rs", r##"
+        (
+            0,
+            "label.rs",
+            r##"
             #[component]
             pub fn labelled(label: Markup, children: Markup) -> Markup {
                 html! { div bq-setup { button { (label) } (children) } }
             }
-        "##),
-        (0, "a.rs", r##"
+        "##,
+        ),
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "toolbar")]
             fn view() -> Markup {
                 html! { div bq-setup { Labelled(label = html! { span bq-ref="toolbar.current" {} i bq-ref="own" {} }) {} } }
             }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Toolbar"), r#"Setup<"div", { current: "span" }>"#);
     assert_eq!(setup(&types, "Labelled"), r#"Setup<"div", { own: "i" }>"#);
@@ -147,7 +187,10 @@ fn markup_in_component_arguments_is_walked_where_it_is_spliced() {
 
 #[test]
 fn markup_in_closures_and_branches_is_many_or_optional() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "list")]
         fn view() -> Markup {
             html! {
@@ -157,26 +200,34 @@ fn markup_in_closures_and_branches_is_many_or_optional() {
                 }
             }
         }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "List"), r#"Setup<"ul", { item: ("li")[]; note?: "p" }>"#);
 }
 
 #[test]
 fn markup_in_a_let_binding_is_walked_where_it_is_spliced() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "card")]
         fn view() -> Markup {
             let title = html! { h2 bq-ref="title" {} };
             html! { section bq-setup { (title) } }
         }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Card"), r#"Setup<"section", { title: "h2" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn markup_in_a_let_binding_that_is_never_spliced_is_walked() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "clue")]
         fn clue_row(as_partial: bool) -> Markup {
             let row = html! { li bq-setup { (body()) button bq-on:click="save" {} } };
@@ -186,14 +237,21 @@ fn markup_in_a_let_binding_that_is_never_spliced_is_walked() {
             let field = html! { textarea bq-ref="body" {} };
             field
         }
-    "##)]);
-    assert_eq!(setup(&types, "Clue"), r#"Setup<"li", { body: "textarea" }, { save: { event: "click"; tag: "button" } }>"#);
+    "##,
+    )]);
+    assert_eq!(
+        setup(&types, "Clue"),
+        r#"Setup<"li", { body: "textarea" }, { save: { event: "click"; tag: "button" } }>"#
+    );
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn prefixed_ref_gets_the_flags_of_its_owner() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component] fn inner(children: Markup) -> Markup { html! { div bq-setup { (children) } } }
         #[component(setup = "outer")]
         fn view() -> Markup {
@@ -205,37 +263,57 @@ fn prefixed_ref_gets_the_flags_of_its_owner() {
                 }
             }
         }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Outer"), r#"Setup<"div", { icon: ("i")[] }>"#);
     assert_eq!(setup(&types, "Inner"), r#"Setup<"div", { own: "i" }>"#);
 }
 
 #[test]
 fn handler_without_a_value_needs_prevent_or_stop() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "menu")]
         fn view() -> Markup { html! { nav bq-setup { a bq-on:mousedown|prevent {} b bq-on:click|stop {} } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Menu"), r#"Setup<"nav">"#);
 
-    let errors = run(&[(0, "a.rs", r##"
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "menu")]
         fn view() -> Markup { html! { nav bq-setup { a bq-on:mousedown|once {} } } }
-    "##)])
+    "##,
+    )])
     .unwrap_err();
-    assert!(errors[0].contains("Only `prevent` and `stop` can be used without a handler"), "{errors:?}");
+    assert!(
+        errors[0].contains("Only `prevent` and `stop` can be used without a handler"),
+        "{errors:?}"
+    );
 }
 
 #[test]
 fn plain_function_is_followed_across_files() {
     let (types, _, warnings) = ok(&[
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "menu")]
             fn view() -> Markup { html! { nav bq-setup { (item("x")) } } }
-        "##),
-        (0, "b.rs", r##"
+        "##,
+        ),
+        (
+            0,
+            "b.rs",
+            r##"
             fn item(name: &str) -> Markup { html! { a bq-ref="link" { (name) } } }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Menu"), r#"Setup<"nav", { link: "a" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -243,33 +321,45 @@ fn plain_function_is_followed_across_files() {
 
 #[test]
 fn orphan_reference_is_an_error() {
-    let errors = run(&[(0, "a.rs", r##"
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
         fn lonely() -> Markup { html! { a bq-ref="link" {} } }
-    "##)])
+    "##,
+    )])
     .unwrap_err();
     assert_eq!(errors, [r#"a.rs:2: bq-ref="link" is not inside an element with bq-setup"#]);
 }
 
 #[test]
 fn nested_html_in_a_splice_keeps_the_scope() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "panel")]
         fn view() -> Markup { html! { div bq-setup { (wrap(html! { span bq-ref="label" {} })) } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Panel"), r#"Setup<"div", { label: "span" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn literal_element_tags() {
-    let (types, registry, _) = ok(&[(0, "a.rs", r##"
+    let (types, registry, _) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component]
         fn link() -> Markup { html! { @element(if link { "a" } else { "button" }) bq-setup {} } }
         #[component]
         fn heading() -> Markup { html! { @element(match level { 1 => "h1", _ => "h2" }) bq-setup {} } }
         #[component]
         fn free() -> Markup { html! { @element(tag) bq-setup {} } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Link"), r#"Setup<"a" | "button">"#);
     assert_eq!(setup(&types, "Heading"), r#"Setup<"h1" | "h2">"#);
     assert_eq!(setup(&types, "Free"), "Setup<string>");
@@ -287,10 +377,14 @@ const CARD: &str = r##"
 fn call_site_setup_goes_to_the_spread_element() {
     let (types, _, warnings) = ok(&[
         (0, "card.rs", CARD),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "collapse")]
             fn view() -> Markup { html! { Card bq-setup { button bq-ref="toggle" {} } } }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Collapse"), r#"Setup<"section", { toggle: "button" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -306,19 +400,27 @@ fn component_setup_owns_the_children() {
     "##;
     let (types, ..) = ok(&[
         (0, "dialog.rs", dialog),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             fn one() -> Markup { html! { Dialog { button bq-ref="close" {} } } }
             fn two() -> Markup { html! { Dialog { button bq-ref="close" {} } } }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Dialog"), r#"Setup<"dialog", { close: "button" }>"#);
 
     let (types, ..) = ok(&[
         (0, "dialog.rs", dialog),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             fn one() -> Markup { html! { Dialog { button bq-ref="close" {} } } }
             fn two() -> Markup { html! { Dialog { p {} } } }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Dialog"), r#"Setup<"dialog", { close?: "button" }>"#);
 }
@@ -326,16 +428,24 @@ fn component_setup_owns_the_children() {
 #[test]
 fn call_site_reference_uses_the_component_tags() {
     let (types, _, warnings) = ok(&[
-        (1, "button.rs", r##"
+        (
+            1,
+            "button.rs",
+            r##"
             #[component]
             pub fn button(href: Option<&str>, attrs: Attrs, children: Markup) -> Markup {
                 html! { @element(if href.is_some() { "a" } else { "button" }) .button href=[href] (..attrs) { (children) } }
             }
-        "##),
-        (0, "a.rs", r##"
+        "##,
+        ),
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "form")]
             fn view() -> Markup { html! { form bq-setup { Button bq-ref="save" { "Save" } } } }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Form"), r#"Setup<"form", { save: "a" | "button" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -344,7 +454,10 @@ fn call_site_reference_uses_the_component_tags() {
 #[test]
 fn children_pass_through_nested_components() {
     let (types, _, warnings) = ok(&[
-        (0, "ui.rs", r##"
+        (
+            0,
+            "ui.rs",
+            r##"
             #[component]
             pub fn inner(attrs: Attrs, children: Markup) -> Markup {
                 html! { div bq-setup (..attrs) { (children) } }
@@ -353,11 +466,16 @@ fn children_pass_through_nested_components() {
             pub fn outer(attrs: Attrs, children: Markup) -> Markup {
                 html! { Inner (..attrs) { aside { (children) } } }
             }
-        "##),
-        (0, "a.rs", r##"
+        "##,
+        ),
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "extra")]
             fn view() -> Markup { html! { Outer bq-setup { span bq-ref="extra.x" {} } } }
-        "##),
+        "##,
+        ),
     ]);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(setup(&types, "Inner"), r#"Setup<"div">"#);
@@ -366,22 +484,30 @@ fn children_pass_through_nested_components() {
 
 #[test]
 fn unreached_component_is_walked_alone() {
-    let (types, _, warnings) = ok(&[(1, "input.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        1,
+        "input.rs",
+        r##"
         #[component(setup = "password-toggle")]
         pub fn input(name: &str) -> Markup {
             html! { div bq-setup { button bq-ref="toggle" {} } }
         }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "PasswordToggle"), r#"Setup<"div", { toggle: "button" }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn unknown_component_keeps_its_children() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "outside")]
         fn view() -> Markup { html! { external::Widget bq-setup { i bq-ref="icon" {} } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Outside"), r#"Setup<string, { icon: "i" }>"#);
 }
 
@@ -389,23 +515,31 @@ fn unknown_component_keeps_its_children() {
 fn component_path_uses_the_last_segment() {
     let (types, ..) = ok(&[
         (0, "card.rs", CARD),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "collapse")]
             fn view() -> Markup { html! { ui::Card bq-setup {} } }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(setup(&types, "Collapse"), r#"Setup<"section">"#);
 }
 
 #[test]
 fn recursive_component_stops() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component]
         pub fn tree(children: Markup) -> Markup {
             html! { ul bq-setup { li bq-ref="node" { Tree { (children) } } } }
         }
         fn view() -> Markup { html! { Tree { b {} } } }
-    "##)]);
+    "##,
+    )]);
     assert!(setup(&types, "Tree").starts_with(r#"Setup<"ul""#), "{types}");
 }
 
@@ -414,10 +548,14 @@ fn same_root_wins_and_ambiguity_warns() {
     let card_b = CARD.replace("section", "article");
     let card_c = CARD.replace("section", "aside");
     let (types, _, warnings) = ok(&[
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "here")]
             fn view() -> Markup { html! { Card bq-setup {} } }
-        "##),
+        "##,
+        ),
         (0, "card.rs", CARD),
         (1, "b.rs", &card_b),
     ]);
@@ -425,37 +563,49 @@ fn same_root_wins_and_ambiguity_warns() {
     assert!(warnings.is_empty(), "{warnings:?}");
 
     let (types, _, warnings) = ok(&[
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "here")]
             fn view() -> Markup { html! { Card bq-setup {} } }
-        "##),
+        "##,
+        ),
         (1, "b.rs", &card_b),
         (2, "c.rs", &card_c),
     ]);
     assert_eq!(setup(&types, "Here"), "Setup<string>");
-    assert_eq!(warnings, ["a.rs:3: `Card` matches more than one function (b.rs, c.rs), so bq_setups does not follow it"]);
+    assert_eq!(
+        warnings,
+        ["a.rs:3: `Card` matches more than one function (b.rs, c.rs), so bq_setups does not follow it"]
+    );
 }
 
 #[test]
 fn errors_are_reported_once() {
-    let errors = run(&[(0, "a.rs", r##"
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
 
         #[component]
         pub fn item(children: Markup) -> Markup { html! { a bq-ref="Bad" {} (children) } }
         #[component(setup = "menu")] fn view() -> Markup { html! { nav bq-setup { Item {} Item {} } } }
-    "##)])
+    "##,
+    )])
     .unwrap_err();
     assert_eq!(
         errors,
-        [
-            r#"a.rs:4: bq-ref="Bad" must be lowercase kebab-case, for example bq-ref="close-button" or bq-ref="menu.close-button""#,
-        ]
+        [r#"a.rs:4: bq-ref="Bad" must be lowercase kebab-case, for example bq-ref="close-button" or bq-ref="menu.close-button""#,]
     );
 }
 
 #[test]
 fn handlers_on_the_setup_element_and_inside_it() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "dropdown")]
         fn view() -> Markup {
             html! {
@@ -464,7 +614,8 @@ fn handlers_on_the_setup_element_and_inside_it() {
                 }
             }
         }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(
         setup(&types, "Dropdown"),
         r#"Setup<"details", {}, { close: { event: "keydown"; tag: "details" }; outside: { event: "pointerdown"; tag: "details"; target: "document" }; toggle: { event: "click"; tag: "summary" } }>"#
@@ -474,7 +625,10 @@ fn handlers_on_the_setup_element_and_inside_it() {
 
 #[test]
 fn handlers_with_refs_and_several_uses() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "picker")]
         fn view() -> Markup {
             html! {
@@ -485,7 +639,8 @@ fn handlers_with_refs_and_several_uses() {
                 }
             }
         }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(
         setup(&types, "Picker"),
         r#"Setup<"div", { custom: "input" }, { pick: { event: "click"; tag: "button" } | { event: "input"; tag: "input" } | { event: "resize"; tag: "button"; target: "window" } }>"#
@@ -494,16 +649,23 @@ fn handlers_with_refs_and_several_uses() {
 
 #[test]
 fn setups_without_handlers_are_unchanged() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "plain")]
         fn view() -> Markup { html! { div bq-setup { i bq-ref="icon" {} } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Plain"), r#"Setup<"div", { icon: "i" }>"#);
 }
 
 #[test]
 fn named_handler_reaches_an_outer_setup() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component] fn password_toggle(children: Markup) -> Markup { html! { div bq-setup { (children) } } }
         #[component(setup = "dirty-form")]
         fn view() -> Markup {
@@ -515,40 +677,64 @@ fn named_handler_reaches_an_outer_setup() {
                 }
             }
         }
-    "##)]);
-    assert_eq!(setup(&types, "DirtyForm"), r#"Setup<"form", {}, { update: { event: "input"; tag: "input" } }>"#);
-    assert_eq!(setup(&types, "PasswordToggle"), r#"Setup<"div", {}, { reveal: { event: "focus"; tag: "input" } }>"#);
+    "##,
+    )]);
+    assert_eq!(
+        setup(&types, "DirtyForm"),
+        r#"Setup<"form", {}, { update: { event: "input"; tag: "input" } }>"#
+    );
+    assert_eq!(
+        setup(&types, "PasswordToggle"),
+        r#"Setup<"div", {}, { reveal: { event: "focus"; tag: "input" } }>"#
+    );
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn two_setups_need_a_setup_name() {
-    let errors = run(&[(0, "a.rs", r##"
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
         #[component] pub fn dirty_form(attrs: Attrs) -> Markup { html! { form bq-setup (..attrs) {} } }
         #[component(setup = "theme-preview")]
         fn view() -> Markup { html! { DirtyForm bq-setup bq-on:input="update" {} } }
-    "##)])
+    "##,
+    )])
     .unwrap_err();
     assert_eq!(
         errors,
-        [r#"a.rs:4: bq-on:input="update" is inside more than one setup (dirty-form, theme-preview); write the setup name, for example bq-on:input="dirty-form.update""#]
+        [
+            r#"a.rs:4: bq-on:input="update" is inside more than one setup (dirty-form, theme-preview); write the setup name, for example bq-on:input="dirty-form.update""#
+        ]
     );
 
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component] pub fn dirty_form(attrs: Attrs) -> Markup { html! { form bq-setup (..attrs) {} } }
         #[component(setup = "theme-preview")]
         fn view() -> Markup { html! { DirtyForm bq-setup bq-on:input="theme-preview.refresh" {} } }
-    "##)]);
-    assert_eq!(setup(&types, "ThemePreview"), r#"Setup<"form", {}, { refresh: { event: "input"; tag: "form" } }>"#);
+    "##,
+    )]);
+    assert_eq!(
+        setup(&types, "ThemePreview"),
+        r#"Setup<"form", {}, { refresh: { event: "input"; tag: "form" } }>"#
+    );
     assert_eq!(setup(&types, "DirtyForm"), r#"Setup<"form">"#);
 }
 
 #[test]
 fn handlers_outside_a_setup_are_errors() {
-    let errors = run(&[(0, "a.rs", r##"
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "dirty-form")]
         fn view() -> Markup { html! { div bq-setup {} button bq-on:click="save" {} button bq-on:click="dirty-form.save" {} } }
-    "##)])
+    "##,
+    )])
     .unwrap_err();
     assert_eq!(
         errors,
@@ -561,11 +747,15 @@ fn handlers_outside_a_setup_are_errors() {
 
 #[test]
 fn handler_in_a_followed_function_does_not_warn() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "menu")]
         fn view() -> Markup { html! { nav bq-setup { (item()) } } }
         fn item() -> Markup { html! { a bq-on:click|prevent="open" {} } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Menu"), r#"Setup<"nav", {}, { open: { event: "click"; tag: "a" } }>"#);
     assert!(warnings.is_empty(), "{warnings:?}");
 }
@@ -574,7 +764,10 @@ fn handler_in_a_followed_function_does_not_warn() {
 fn call_site_handler_goes_to_the_spread_element() {
     let (types, _, warnings) = ok(&[
         (0, "card.rs", CARD),
-        (0, "a.rs", r##"
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "collapse")]
             fn view() -> Markup {
                 html! {
@@ -583,7 +776,8 @@ fn call_site_handler_goes_to_the_spread_element() {
                     external::Widget bq-setup bq-on:focus="toggle" {}
                 }
             }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(
         setup(&types, "Collapse"),
@@ -595,33 +789,48 @@ fn call_site_handler_goes_to_the_spread_element() {
 #[test]
 fn call_site_handler_with_the_same_attribute_merges() {
     let (types, _, warnings) = ok(&[
-        (0, "form.rs", r##"
+        (
+            0,
+            "form.rs",
+            r##"
             #[component]
             pub fn dirty_form(attrs: Attrs, children: Markup) -> Markup {
                 html! { form bq-setup bq-on:input="dirty-form.update" (..attrs) { (children) } }
             }
-        "##),
-        (0, "a.rs", r##"
+        "##,
+        ),
+        (
+            0,
+            "a.rs",
+            r##"
             #[component(setup = "preview")]
             fn view() -> Markup {
                 html! { DirtyForm bq-setup bq-on:input="preview.schedule preview.count" {} }
             }
-        "##),
+        "##,
+        ),
     ]);
     assert_eq!(
         setup(&types, "Preview"),
         r#"Setup<"form", {}, { count: { event: "input"; tag: "form" }; schedule: { event: "input"; tag: "form" } }>"#
     );
-    assert_eq!(setup(&types, "DirtyForm"), r#"Setup<"form", {}, { update: { event: "input"; tag: "form" } }>"#);
+    assert_eq!(
+        setup(&types, "DirtyForm"),
+        r#"Setup<"form", {}, { update: { event: "input"; tag: "form" } }>"#
+    );
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
 fn several_handlers_in_one_attribute() {
-    let (types, _, warnings) = ok(&[(0, "a.rs", r##"
+    let (types, _, warnings) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "menu")]
         fn view() -> Markup { html! { nav bq-setup { a bq-on:click|prevent="open  track-click" {} } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(
         setup(&types, "Menu"),
         r#"Setup<"nav", {}, { open: { event: "click"; tag: "a" }; trackClick: { event: "click"; tag: "a" } }>"#
@@ -637,12 +846,21 @@ fn handler_errors() {
         (r#"bq-on:input|s="a""#, "`s` cannot be used with the `input` event"),
         (r#"bq-on:focus|ctrl="a""#, "`ctrl` cannot be used with the `focus` event"),
         (r#"bq-on:keydown|middle="a""#, "`middle` cannot be used with the `keydown` event"),
-        (r#"bq-on:touchstart|passive|prevent="a""#, "`passive` and `prevent` cannot be used together"),
+        (
+            r#"bq-on:touchstart|passive|prevent="a""#,
+            "`passive` and `prevent` cannot be used together",
+        ),
         (r#"bq-on:click|window|document="a""#, "use only one of `window` and `document`"),
-        (r#"bq-on:click|self|document="a""#, "`self` cannot be used with `window` or `document`"),
+        (
+            r#"bq-on:click|self|document="a""#,
+            "`self` cannot be used with `window` or `document`",
+        ),
         (r#"bq-on:click|once|once="a""#, "the modifier `once` is given two times"),
         (r#"bq-on:htmx:afterSwap="a""#, "event names must be lowercase"),
-        (r#"bq-on:click="saveIt""#, r#"the handler must be kebab-case, for example bq-on:click="save-it""#),
+        (
+            r#"bq-on:click="saveIt""#,
+            r#"the handler must be kebab-case, for example bq-on:click="save-it""#,
+        ),
         (r#"bq-on:click="menu.saveIt""#, r#"for example bq-on:click="menu.save-it""#),
         (r#"bq-on:click="save_it""#, "the handler must be kebab-case"),
         (r#"bq-on:click="save-""#, "the handler must be kebab-case"),
@@ -653,9 +871,8 @@ fn handler_errors() {
         (r#"bq-on:click=" ""#, "bq-on:click needs a handler"),
     ];
     for (attribute, expected) in cases {
-        let source = format!(
-            "#[component(setup = \"menu\")]\nfn view() -> Markup {{ html! {{ div bq-setup {{ button {attribute} {{}} }} }} }}"
-        );
+        let source =
+            format!("#[component(setup = \"menu\")]\nfn view() -> Markup {{ html! {{ div bq-setup {{ button {attribute} {{}} }} }} }}");
         let errors = run(&[(0, "a.rs", &source)]).unwrap_err();
         assert_eq!(errors.len(), 1, "{attribute}: {errors:?}");
         assert!(errors[0].contains(expected), "{attribute}: {errors:?}");
@@ -664,10 +881,14 @@ fn handler_errors() {
 
 #[test]
 fn kebab_handlers_become_camel_case() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "editor")]
         fn view() -> Markup { html! { div bq-setup { input bq-on:change="files-picked" bq-on:input="editor.mark-dirty-2"; } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(
         setup(&types, "Editor"),
         r#"Setup<"div", {}, { filesPicked: { event: "change"; tag: "input" }; markDirty2: { event: "input"; tag: "input" } }>"#
@@ -676,7 +897,10 @@ fn kebab_handlers_become_camel_case() {
 
 #[test]
 fn allowed_modifier_combinations() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "keys")]
         fn view() -> Markup {
             html! {
@@ -687,16 +911,27 @@ fn allowed_modifier_combinations() {
                 }
             }
         }
-    "##)]);
-    assert!(types.contains(r#"flush: { event: "htmx:before:request"; tag: "p"; target: "document" }"#), "{types}");
-    assert!(types.contains(r#"save: { event: "keydown"; tag: "input"; target: "window" }"#), "{types}");
+    "##,
+    )]);
+    assert!(
+        types.contains(r#"flush: { event: "htmx:before:request"; tag: "p"; target: "document" }"#),
+        "{types}"
+    );
+    assert!(
+        types.contains(r#"save: { event: "keydown"; tag: "input"; target: "window" }"#),
+        "{types}"
+    );
 }
 
 #[test]
 fn signal_and_props_are_normal_ref_names() {
-    let (types, ..) = ok(&[(0, "a.rs", r##"
+    let (types, ..) = ok(&[(
+        0,
+        "a.rs",
+        r##"
         #[component(setup = "menu")]
         fn view() -> Markup { html! { nav bq-setup { i bq-ref="signal props" {} } } }
-    "##)]);
+    "##,
+    )]);
     assert_eq!(setup(&types, "Menu"), r#"Setup<"nav", { props: "i"; signal: "i" }>"#);
 }

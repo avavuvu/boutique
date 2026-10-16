@@ -9,8 +9,7 @@ use chrono::Utc;
 use crate::{
     cookies,
     error::AppError,
-    htmx,
-    session,
+    htmx, session,
     state::AuthState,
     store::{AuthStore, AuthUser, StoreError},
 };
@@ -25,9 +24,15 @@ async fn resolve<U: AuthUser>(parts: &mut Parts, auth: &AuthState<U>) -> Result<
         return Ok(user.clone());
     }
 
-    let token_hash = CookieJar::from_headers(&parts.headers).get(cookies::SESSION).map(|cookie| session::hash(cookie.value()));
+    let token_hash = CookieJar::from_headers(&parts.headers)
+        .get(cookies::SESSION)
+        .map(|cookie| session::hash(cookie.value()));
     let user = match token_hash {
-        Some(token_hash) => auth.store.find_session_user(&token_hash, Utc::now()).await.map_err(StoreError::from_debug)?,
+        Some(token_hash) => auth
+            .store
+            .find_session_user(&token_hash, Utc::now())
+            .await
+            .map_err(StoreError::from_debug)?,
         None => None,
     };
 

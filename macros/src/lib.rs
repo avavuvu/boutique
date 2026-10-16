@@ -27,7 +27,11 @@ impl Parse for AttributePair {
             (ident.unraw().to_string().replace('_', "-"), ident.span())
         };
 
-        let value = if input.parse::<Option<Token![=]>>()?.is_some() { Some(input.parse()?) } else { None };
+        let value = if input.parse::<Option<Token![=]>>()?.is_some() {
+            Some(input.parse()?)
+        } else {
+            None
+        };
         Ok(Self { name, span, value })
     }
 }
@@ -117,7 +121,8 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     if func.attrs.iter().any(is_doc) {
         func.attrs.push(syn::parse_quote!(#[doc = ""]));
     }
-    func.attrs.extend(docs.iter().map(|line| -> syn::Attribute { syn::parse_quote!(#[doc = #line]) }));
+    func.attrs
+        .extend(docs.iter().map(|line| -> syn::Attribute { syn::parse_quote!(#[doc = #line]) }));
 
     let fn_name = &func.sig.ident;
     let visibility = &func.vis;
@@ -180,7 +185,11 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 fn attach_setup(func: &mut ItemFn, options: &ComponentOptions, crate_path: &proc_macro2::TokenStream) -> syn::Result<()> {
     let setup = Ident::new("__BqSetup", proc_macro2::Span::call_site());
     if !bq_html::setup::mark(&mut func.block, &setup) {
-        let option = options.eager.as_ref().map(Ident::span).or_else(|| options.setup.as_ref().map(LitStr::span));
+        let option = options
+            .eager
+            .as_ref()
+            .map(Ident::span)
+            .or_else(|| options.setup.as_ref().map(LitStr::span));
         return match option {
             Some(span) => Err(syn::Error::new(
                 span,
@@ -303,7 +312,9 @@ fn doc_text(attrs: &[syn::Attribute]) -> String {
         .filter(|attr| is_doc(attr))
         .filter_map(|attr| match &attr.meta {
             syn::Meta::NameValue(syn::MetaNameValue {
-                value: Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(text), .. }),
+                value: Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(text), ..
+                }),
                 ..
             }) => Some(text.value().trim().to_string()),
             _ => None,
@@ -344,8 +355,14 @@ fn builder_options(attrs: &[syn::Attribute]) -> BuilderOptions {
 
 fn option_inner(ty: &syn::Type) -> Option<&syn::Type> {
     let syn::Type::Path(path) = ty else { return None };
-    let segment = path.path.segments.last().filter(|segment| path.qself.is_none() && segment.ident == "Option")?;
-    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else { return None };
+    let segment = path
+        .path
+        .segments
+        .last()
+        .filter(|segment| path.qself.is_none() && segment.ident == "Option")?;
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
     match arguments.args.first() {
         Some(syn::GenericArgument::Type(inner)) => Some(inner),
         _ => None,
@@ -353,9 +370,19 @@ fn option_inner(ty: &syn::Type) -> Option<&syn::Type> {
 }
 
 fn tidy(tokens: &str) -> String {
-    [(" < ", "<"), ("< ", "<"), (" >", ">"), ("& ", "&"), (" ,", ","), (" :: ", "::"), (":: ", "::"), (" !", "!"), ("! ", "!")]
-        .iter()
-        .fold(tokens.to_string(), |text, (from, to)| text.replace(from, to))
+    [
+        (" < ", "<"),
+        ("< ", "<"),
+        (" >", ">"),
+        ("& ", "&"),
+        (" ,", ","),
+        (" :: ", "::"),
+        (":: ", "::"),
+        (" !", "!"),
+        ("! ", "!"),
+    ]
+    .iter()
+    .fold(tokens.to_string(), |text, (from, to)| text.replace(from, to))
 }
 
 fn props(func: &ItemFn) -> Vec<Prop> {
@@ -367,7 +394,9 @@ fn props(func: &ItemFn) -> Vec<Prop> {
             syn::FnArg::Receiver(_) => None,
         })
         .filter_map(|typed| {
-            let syn::Pat::Ident(pattern) = typed.pat.as_ref() else { return None };
+            let syn::Pat::Ident(pattern) = typed.pat.as_ref() else {
+                return None;
+            };
             let name = pattern.ident.unraw().to_string();
             let options = builder_options(&typed.attrs);
             let optional_option = !options.required && option_inner(&typed.ty).is_some();
@@ -381,7 +410,11 @@ fn props(func: &ItemFn) -> Vec<Prop> {
 
             let setter_type = if optional_option { option_inner(&typed.ty) } else { None }.unwrap_or(&typed.ty);
             let setter_type = tidy(&quote!(#setter_type).to_string());
-            let ty = if options.into { format!("impl Into<{setter_type}>") } else { setter_type };
+            let ty = if options.into {
+                format!("impl Into<{setter_type}>")
+            } else {
+                setter_type
+            };
 
             let required = options.default.is_none() && !optional_option;
             let kind = match (&role, &options.default) {
@@ -409,7 +442,11 @@ fn props(func: &ItemFn) -> Vec<Prop> {
 }
 
 fn example(pascal: &str, props: &[Prop]) -> Vec<String> {
-    let mut arguments: Vec<String> = props.iter().filter(|prop| prop.role == Role::Positional).map(|prop| prop.name.clone()).collect();
+    let mut arguments: Vec<String> = props
+        .iter()
+        .filter(|prop| prop.role == Role::Positional)
+        .map(|prop| prop.name.clone())
+        .collect();
     arguments.extend(
         props
             .iter()
@@ -417,7 +454,11 @@ fn example(pascal: &str, props: &[Prop]) -> Vec<String> {
             .map(|prop| format!("{} = …", prop.name)),
     );
 
-    let body = if props.iter().any(|prop| prop.role == Role::Children) { " { … }" } else { ";" };
+    let body = if props.iter().any(|prop| prop.role == Role::Children) {
+        " { … }"
+    } else {
+        ";"
+    };
 
     match arguments.len() {
         0 => vec![format!("{pascal}{body}")],
@@ -443,7 +484,14 @@ fn component_docs(pascal: &str, func: &ItemFn) -> Vec<String> {
     lines.push(String::new());
     lines.push(" # Props".to_string());
     lines.push(String::new());
-    lines.push(if described { " | Prop | Type | Kind | Description |" } else { " | Prop | Type | Kind |" }.to_string());
+    lines.push(
+        if described {
+            " | Prop | Type | Kind | Description |"
+        } else {
+            " | Prop | Type | Kind |"
+        }
+        .to_string(),
+    );
     lines.push(if described { " |---|---|---|---|" } else { " |---|---|---|" }.to_string());
     for prop in &props {
         let row = format!(" | `{}` | `{}` | {} |", prop.name, prop.ty, prop.kind);

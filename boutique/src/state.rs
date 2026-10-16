@@ -9,7 +9,11 @@ pub struct AuthState<U: AuthUser> {
 
 impl<U: AuthUser> AuthState<U> {
     pub fn new(store: U::Store, secret: impl Into<String>) -> Self {
-        Self { store, secret: secret.into(), config: AuthConfig::default() }
+        Self {
+            store,
+            secret: secret.into(),
+            config: AuthConfig::default(),
+        }
     }
 
     pub fn config(mut self, config: AuthConfig) -> Self {
