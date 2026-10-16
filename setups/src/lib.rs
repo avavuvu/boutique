@@ -15,7 +15,7 @@ use heck::{ToLowerCamelCase, ToUpperCamelCase};
 
 use index::Index;
 use on::Target;
-use walk::{Tags, Usage, Walker};
+use walk::{Tags, Usage, Walked, Walker};
 
 const BOUTIQUE: &str = "boutique";
 const RUNTIME: &str = "./boutique/setups";
@@ -36,6 +36,7 @@ struct Source {
 struct Declaration {
     name: String,
     function: String,
+    function_id: usize,
     eager: bool,
     import: String,
     location: String,
@@ -160,14 +161,18 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
     }
     errors.append(&mut index.errors);
 
-    let (usages, mut walk_errors, mut warnings) = walk(&index);
-    errors.append(&mut walk_errors);
+    let walked = walk(&index);
+    errors.extend(walked.errors);
+    let mut warnings = std::mem::take(&mut index.warnings);
+    warnings.extend(walked.warnings);
 
     let by_name = declarations(&index, &mut errors);
-    let merged = merge(&usages, &by_name);
+    let merged = merge(&walked.usages, &by_name);
 
     for (name, declaration) in &by_name {
-        if !merged.contains_key(name) {
+        let function = declaration.function_id;
+        let unparsed = index.functions[function].unparsed || walked.unparsed.contains(&function);
+        if !merged.contains_key(name) && !unparsed {
             warnings.push(format!(
                 "{}: the bare bq-setup of `{}` is not reached by bq_setups, so the setup \"{}\" has no tags, refs or handlers",
                 declaration.location, declaration.function, declaration.name
@@ -182,7 +187,7 @@ fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec<Str
     Ok((types(runtime, &by_name, &merged), registry(runtime, &by_name, &merged), warnings))
 }
 
-fn walk(index: &Index) -> (Vec<Usage>, Vec<String>, Vec<String>) {
+fn walk(index: &Index) -> Walked {
     let components: Vec<usize> = index
         .functions
         .iter()
@@ -236,6 +241,7 @@ fn declarations(index: &Index, errors: &mut Vec<String>) -> BTreeMap<String, Dec
         let declaration = Declaration {
             name: setup.name.clone(),
             function: setup.function.clone(),
+            function_id: setup.function_id,
             eager: setup.eager,
             import: file.import.clone(),
             location: format!("{}:{}", file.name, setup.line),

@@ -9,7 +9,9 @@ use heck::ToUpperCamelCase;
 
 use syn::{ext::IdentExt, visit::Visit};
 
-use crate::walk::{Flags, html_blocks, parse};
+use syn::spanned::Spanned;
+
+use crate::walk::{Flags, html_blocks, parse, unparsed};
 
 pub struct File {
     pub name: String,
@@ -24,11 +26,13 @@ pub struct Function {
     pub setup: Option<String>,
     pub blocks: Vec<usize>,
     pub bindings: HashMap<String, usize>,
+    pub unparsed: bool,
 }
 
 pub struct SetupDeclaration {
     pub name: String,
     pub function: String,
+    pub function_id: usize,
     pub eager: bool,
     pub file: usize,
     pub line: usize,
@@ -52,6 +56,7 @@ pub struct Index {
     pub components: HashMap<String, Vec<usize>>,
     pub setups: Vec<SetupDeclaration>,
     pub errors: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 impl Index {
@@ -85,6 +90,7 @@ impl Index {
                 setup: None,
                 blocks: Vec::new(),
                 bindings: HashMap::new(),
+                unparsed: false,
             });
             let index = self.functions.len() - 1;
             self.by_name.entry(name.clone()).or_default().push(index);
@@ -126,14 +132,33 @@ impl Index {
         self.setups.push(SetupDeclaration {
             name,
             function: item.sig.ident.unraw().to_string(),
+            function_id: function,
             eager: options.eager.is_some(),
             file,
             line,
         });
     }
 
-    fn block(&mut self, file: usize, function: Option<usize>, tokens: proc_macro2::TokenStream, flags: Flags, binding: Option<String>) {
-        let Some(markups) = parse(tokens) else { return };
+    fn block(
+        &mut self,
+        file: usize,
+        function: Option<usize>,
+        span: proc_macro2::Span,
+        tokens: proc_macro2::TokenStream,
+        flags: Flags,
+        binding: Option<String>,
+    ) {
+        let markups = match parse(tokens) {
+            Ok(markups) => markups,
+            Err(error) => {
+                let location = format!("{}:{}", self.files[file].name, span.start().line);
+                self.warnings.push(unparsed(&location, &error));
+                if let Some(function) = function {
+                    self.functions[function].unparsed = true;
+                }
+                return;
+            }
+        };
         let binding = binding.filter(|_| function.is_some());
         self.blocks.push(Block {
             file,
@@ -196,12 +221,13 @@ impl<'ast> Visit<'ast> for Collector<'_> {
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
         let binding = self.binding.take();
         if mac.path.segments.last().is_some_and(|segment| segment.ident == "html") {
-            self.index.block(self.file, self.current, mac.tokens.clone(), self.flags, binding);
+            self.index
+                .block(self.file, self.current, mac.path.span(), mac.tokens.clone(), self.flags, binding);
         } else {
             let mut blocks = Vec::new();
             html_blocks(mac.tokens.clone(), &mut blocks);
-            for tokens in blocks {
-                self.index.block(self.file, self.current, tokens, self.flags, None);
+            for (span, tokens) in blocks {
+                self.index.block(self.file, self.current, span, tokens, self.flags, None);
             }
         }
         syn::visit::visit_macro(self, mac);

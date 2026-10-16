@@ -124,16 +124,19 @@ struct Frame<'c> {
     children_used: Cell<bool>,
 }
 
-pub fn parse(tokens: TokenStream) -> Option<Markups<Element>> {
+pub fn parse(tokens: TokenStream) -> syn::Result<Markups<Element>> {
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     Parser::parse2(
         |input: syn::parse::ParseStream| Markups::diagnostic_parse(input, &mut diagnostics),
         tokens,
     )
-    .ok()
 }
 
-pub fn html_blocks(tokens: TokenStream, out: &mut Vec<TokenStream>) {
+pub fn unparsed(location: &str, error: &syn::Error) -> String {
+    format!("{location}: html! could not be parsed, so its bq-* attributes are ignored: {error}")
+}
+
+pub fn html_blocks(tokens: TokenStream, out: &mut Vec<(Span, TokenStream)>) {
     let tokens: Vec<TokenTree> = tokens.into_iter().collect();
     for (index, token) in tokens.iter().enumerate() {
         let TokenTree::Group(group) = token else { continue };
@@ -141,7 +144,7 @@ pub fn html_blocks(tokens: TokenStream, out: &mut Vec<TokenStream>) {
             && matches!(&tokens[index - 2], TokenTree::Ident(ident) if ident == "html")
             && matches!(&tokens[index - 1], TokenTree::Punct(punct) if punct.as_char() == '!');
         if is_html {
-            out.push(group.stream());
+            out.push((tokens[index - 2].span(), group.stream()));
         } else {
             html_blocks(group.stream(), out);
         }
@@ -154,6 +157,7 @@ pub struct Walker<'a> {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
     pub reached: HashSet<usize>,
+    pub unparsed: HashSet<usize>,
     followed: HashSet<usize>,
     orphans: Vec<(Option<usize>, String, Option<String>)>,
     stack: Vec<usize>,
@@ -170,6 +174,7 @@ impl<'a> Walker<'a> {
             errors: Vec::new(),
             warnings: Vec::new(),
             reached: HashSet::new(),
+            unparsed: HashSet::new(),
             followed: HashSet::new(),
             orphans: Vec::new(),
             stack: Vec::new(),
@@ -191,7 +196,7 @@ impl<'a> Walker<'a> {
         self.markups(&block.markups, &cx);
     }
 
-    pub fn finish(mut self) -> (Vec<Usage>, Vec<String>, Vec<String>) {
+    pub fn finish(mut self) -> Walked {
         for (function, message, binding) in std::mem::take(&mut self.orphans) {
             if function.is_some_and(|function| self.followed.contains(&function)) {
                 continue;
@@ -203,7 +208,12 @@ impl<'a> Walker<'a> {
                 None => self.errors.push(message),
             }
         }
-        (self.usages, unique(self.errors), unique(self.warnings))
+        Walked {
+            usages: self.usages,
+            errors: unique(self.errors),
+            warnings: unique(self.warnings),
+            unparsed: self.unparsed,
+        }
     }
 
     pub fn component_alone(&mut self, function: usize) {
@@ -392,15 +402,20 @@ impl<'a> Walker<'a> {
 
         let mut finder = MacroFinder::default();
         finder.visit_expr(expr);
-        for (tokens, optional, many) in finder.blocks {
-            if let Some(markups) = parse(tokens) {
-                self.markups(
+        for (span, tokens, optional, many) in finder.blocks {
+            match parse(tokens) {
+                Ok(markups) => self.markups(
                     &markups,
                     &Cx {
                         scope: cx.scope.flagged(optional, many),
                         ..cx.clone()
                     },
-                );
+                ),
+                Err(error) => {
+                    let location = self.location(cx.file, span);
+                    self.warnings.push(unparsed(&location, &error));
+                    self.unparsed.extend(cx.function);
+                }
             }
         }
     }
@@ -810,20 +825,28 @@ impl<'a> Walker<'a> {
 
 #[derive(Default)]
 struct MacroFinder {
-    blocks: Vec<(TokenStream, bool, bool)>,
+    blocks: Vec<(Span, TokenStream, bool, bool)>,
     flags: Flags,
+}
+
+pub struct Walked {
+    pub usages: Vec<Usage>,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    pub unparsed: HashSet<usize>,
 }
 
 impl<'ast> Visit<'ast> for MacroFinder {
     fn visit_macro(&mut self, mac: &'ast syn::Macro) {
         let mut found = Vec::new();
         if mac.path.segments.last().is_some_and(|segment| segment.ident == "html") {
-            found.push(mac.tokens.clone());
+            found.push((mac.path.span(), mac.tokens.clone()));
         } else {
             html_blocks(mac.tokens.clone(), &mut found);
         }
         let Flags { optional, many } = self.flags;
-        self.blocks.extend(found.into_iter().map(|tokens| (tokens, optional, many)));
+        self.blocks
+            .extend(found.into_iter().map(|(span, tokens)| (span, tokens, optional, many)));
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
