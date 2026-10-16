@@ -5,36 +5,36 @@ use crate::{
     views::head::{Head, Metadata},
 };
 
-pub fn base(context: &Head, content: Markup) -> Markup {
+pub fn base(head: &Head, content: Markup) -> Markup {
     html! {
         (DOCTYPE)
-        html lang=(context.lang) class=[context.class.as_deref()] data-theme=[context.theme.as_deref()] {
+        html lang=(head.lang) class=[head.class.as_deref()] data-theme=[head.theme.as_deref()] {
             head {
                 meta charset="UTF-8";
-                meta name="viewport" content=(context.viewport);
-                @if let Some(manifest) = &context.manifest {
+                meta name="viewport" content=(head.viewport);
+                @if let Some(manifest) = &head.manifest {
                     link rel="manifest" href=(manifest);
                 }
-                @if let Some(color) = &context.theme_color {
+                @if let Some(color) = &head.theme_color {
                     meta name="theme-color" content=(color);
                 }
-                @if let Some(favicon) = &context.favicon {
+                @if let Some(favicon) = &head.favicon {
                     link rel="icon" type="image/x-icon" href=(favicon);
                 }
-                title { (context.title) }
-                @for (href, mime) in &context.preloads {
+                title { (head.title) }
+                @for (href, mime) in &head.preloads {
                     link rel="preload" as="font" type=[mime] href=(href) crossorigin;
                 }
-                @for href in &context.stylesheets {
+                @for href in &head.stylesheets {
                     link rel="stylesheet" href=(href);
                 }
-                @if let Some(meta) = &context.metadata {
-                    (seo_tags(&context.title, meta))
+                @if let Some(meta) = &head.metadata {
+                    (seo_tags(&head.title, meta))
                 }
             }
             body {
                 (content)
-                @for src in &context.scripts {
+                @for src in &head.scripts {
                     script type="module" src=(src) {}
                 }
             }

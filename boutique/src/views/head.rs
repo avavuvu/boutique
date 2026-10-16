@@ -74,7 +74,7 @@ impl Head {
         self.module(asset.file)
     }
 
-    pub fn css(self, name: &str) -> Self {
+    pub fn entry_css(self, name: &str) -> Self {
         match manifest_entry(name) {
             Some(asset) => self.stylesheet(asset.file),
             None => self,
@@ -171,12 +171,12 @@ impl Metadata {
         }
     }
 
-    pub fn with_image(mut self, url: impl Into<String>) -> Self {
+    pub fn image(mut self, url: impl Into<String>) -> Self {
         self.image = Some(url.into());
         self
     }
 
-    pub fn with_modified_time(mut self, time: impl Into<String>) -> Self {
+    pub fn modified_time(mut self, time: impl Into<String>) -> Self {
         self.modified_time = Some(time.into());
         self
     }

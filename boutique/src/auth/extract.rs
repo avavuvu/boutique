@@ -75,7 +75,7 @@ async fn resolve<U: AuthUser>(parts: &mut Parts, auth: &AuthState<U>) -> Result<
 
     let token_hash = CookieJar::from_headers(&parts.headers)
         .get(cookies::SESSION)
-        .map(|cookie| session::hash(cookie.value()));
+        .map(|cookie| session::token_hash(cookie.value()));
     let user = match token_hash {
         Some(token_hash) => auth
             .store

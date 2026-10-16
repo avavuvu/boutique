@@ -82,7 +82,7 @@ pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Sessio
     let token = new_token();
     let ttl = state.config.session_ttl;
     let session = NewSession {
-        token_hash: hash(&token),
+        token_hash: token_hash(&token),
         user_id: user.id().to_string(),
         created_at: now,
         expires_at: expiry(now, ttl),
@@ -99,7 +99,7 @@ pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Sessio
 
 pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Session {
     if let Some(cookie) = jar.get(cookies::SESSION) {
-        let token_hash = hash(cookie.value());
+        let token_hash = token_hash(cookie.value());
         let _ = state.store.delete_session(&token_hash).await;
     }
 
@@ -129,6 +129,6 @@ fn new_token() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-pub(crate) fn hash(token: &str) -> String {
+pub(crate) fn token_hash(token: &str) -> String {
     format!("{:x}", Sha256::digest(token.as_bytes()))
 }

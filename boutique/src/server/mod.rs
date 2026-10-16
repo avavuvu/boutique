@@ -61,19 +61,19 @@ impl Server {
     }
 
     pub fn static_dir(self, route: impl Into<String>, dir: impl Into<String>) -> Self {
-        self.static_dir_with(route, dir, Cache::Revalidate)
+        self.static_dir_with_cache(route, dir, Cache::Revalidate)
     }
 
-    pub fn static_dir_with(mut self, route: impl Into<String>, dir: impl Into<String>, cache: Cache) -> Self {
+    pub fn static_dir_with_cache(mut self, route: impl Into<String>, dir: impl Into<String>, cache: Cache) -> Self {
         self.static_dirs.push((route.into(), dir.into(), cache));
         self
     }
 
     pub fn file(self, route: impl Into<String>, path: impl Into<String>) -> Self {
-        self.file_with(route, path, Cache::Revalidate)
+        self.file_with_cache(route, path, Cache::Revalidate)
     }
 
-    pub fn file_with(mut self, route: impl Into<String>, path: impl Into<String>, cache: Cache) -> Self {
+    pub fn file_with_cache(mut self, route: impl Into<String>, path: impl Into<String>, cache: Cache) -> Self {
         self.files.push((route.into(), path.into(), cache));
         self
     }
