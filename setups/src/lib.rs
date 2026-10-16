@@ -305,10 +305,16 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
 fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
     let mut out = format!("import type {{ Registry }} from \"{runtime}\";\nimport type * as setups from \"./setups\";\n");
 
-    for declaration in declarations.values() {
-        if declaration.eager {
-            out.push_str(&format!("import {{ {} }} from \"{}\";\n", declaration.name.to_lower_camel_case(), declaration.import));
+    let mut eager: Vec<(&str, Vec<String>)> = Vec::new();
+    for declaration in declarations.values().filter(|declaration| declaration.eager) {
+        let export = declaration.name.to_lower_camel_case();
+        match eager.iter_mut().find(|(import, _)| *import == declaration.import) {
+            Some((_, exports)) => exports.push(export),
+            None => eager.push((&declaration.import, vec![export])),
         }
+    }
+    for (import, exports) in eager {
+        out.push_str(&format!("import {{ {} }} from \"{import}\";\n", exports.join(", ")));
     }
 
     out.push_str("\nexport const registry: Registry = {\n");
