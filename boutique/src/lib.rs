@@ -34,6 +34,6 @@ pub use config::AuthConfig;
 pub use error::{AppError, AppResult, ErrorReport};
 pub use extractors::AuthenticatedUser;
 pub use run::run;
-pub use server::Server;
+pub use server::{Cache, Server};
 pub use state::AuthState;
 pub use store::{AuthStore, AuthUser, NewSession, StoreError};
