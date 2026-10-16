@@ -935,3 +935,22 @@ fn signal_and_props_are_normal_ref_names() {
     )]);
     assert_eq!(setup(&types, "Menu"), r#"Setup<"nav", { props: "i"; signal: "i" }>"#);
 }
+
+#[test]
+fn wrong_prefix_in_a_helper_called_inside_a_setup_is_an_error() {
+    let errors = run(&[(
+        0,
+        "a.rs",
+        r##"
+        #[component(setup = "menu")]
+        fn view() -> Markup { html! { nav bq-setup { (item()) } } }
+        fn item() -> Markup { html! { a bq-ref="toolbar.link" {} } }
+    "##,
+    )])
+    .unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].starts_with(r#"a.rs:4: bq-ref="toolbar.link" names the setup "toolbar", but no #[component] has that setup"#),
+        "{errors:?}"
+    );
+}

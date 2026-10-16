@@ -98,6 +98,7 @@ struct Cx<'c> {
     frame: Option<&'c Frame<'c>>,
     file: usize,
     function: Option<usize>,
+    context: bool,
 }
 
 #[derive(Clone, Default)]
@@ -111,6 +112,7 @@ struct CallAttrs {
 struct Outside {
     attrs: CallAttrs,
     function: Option<usize>,
+    context: bool,
 }
 
 struct Frame<'c> {
@@ -184,6 +186,7 @@ impl<'a> Walker<'a> {
             frame: None,
             file: block.file,
             function: block.function,
+            context: false,
         };
         self.markups(&block.markups, &cx);
     }
@@ -209,6 +212,7 @@ impl<'a> Walker<'a> {
             frame: None,
             file: self.index.functions[function].file,
             function: Some(function),
+            context: false,
         };
         self.function_blocks(function, &cx);
     }
@@ -219,6 +223,7 @@ impl<'a> Walker<'a> {
             frame: None,
             file: self.index.functions[function].file,
             function: Some(function),
+            context: false,
         };
         self.unspliced_blocks(function, &cx);
     }
@@ -364,6 +369,7 @@ impl<'a> Walker<'a> {
                 frame: None,
                 file: self.index.functions[function].file,
                 function: Some(function),
+                context: true,
                 ..cx.clone()
             };
             self.function_blocks(function, &followed);
@@ -443,6 +449,7 @@ impl<'a> Walker<'a> {
         let mut outside = vec![Outside {
             attrs: self.call_attrs(&element.attrs, location, cx.function),
             function: cx.function,
+            context: cx.context,
         }];
         if element.attrs.iter().any(|attr| matches!(attr, Attribute::Spread { .. }))
             && let Some(frame) = cx.frame
@@ -493,6 +500,7 @@ impl<'a> Walker<'a> {
             frame: Some(&frame),
             file: self.index.functions[function].file,
             function: Some(function),
+            context: true,
         };
 
         self.stack.push(function);
@@ -558,11 +566,11 @@ impl<'a> Walker<'a> {
 
     fn place(&mut self, tags: &Tags, own: CallAttrs, outside: &[Outside], cx: &Cx) -> Scope {
         for (reference, location) in own.refs {
-            self.reference(reference, tags, &cx.scope, location, cx.function);
+            self.reference(reference, tags, &cx.scope, location, cx.function, cx.context);
         }
         for item in outside {
             for (reference, location) in &item.attrs.refs {
-                self.reference(reference.clone(), tags, &cx.scope, location.clone(), item.function);
+                self.reference(reference.clone(), tags, &cx.scope, location.clone(), item.function, item.context);
             }
         }
 
@@ -587,11 +595,11 @@ impl<'a> Walker<'a> {
         }
 
         for (on, location) in own.ons {
-            self.handler(on, tags, &inner, location, cx.function);
+            self.handler(on, tags, &inner, location, cx.function, cx.context);
         }
         for item in outside {
             for (on, location) in &item.attrs.ons {
-                self.handler(on.clone(), tags, &inner, location.clone(), item.function);
+                self.handler(on.clone(), tags, &inner, location.clone(), item.function, item.context);
             }
         }
         inner
@@ -612,7 +620,11 @@ impl<'a> Walker<'a> {
             .collect()
     }
 
-    fn orphan(&mut self, function: Option<usize>, message: String) {
+    fn orphan(&mut self, function: Option<usize>, context: bool, message: String) {
+        if context {
+            self.errors.push(message);
+            return;
+        }
         let binding = match &self.unspliced {
             Some((unspliced, binding)) if function == Some(*unspliced) => Some(binding.clone()),
             _ => None,
@@ -620,7 +632,15 @@ impl<'a> Walker<'a> {
         self.orphans.push((function, message, binding));
     }
 
-    fn owner(&mut self, setup: Option<&str>, scope: &Scope, text: &str, location: &str, function: Option<usize>) -> Option<usize> {
+    fn owner(
+        &mut self,
+        setup: Option<&str>,
+        scope: &Scope,
+        text: &str,
+        location: &str,
+        function: Option<usize>,
+        context: bool,
+    ) -> Option<usize> {
         if let Some(setup) = setup {
             let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name == setup);
             if found.is_none() {
@@ -631,7 +651,7 @@ impl<'a> Walker<'a> {
                     ),
                     None => format!("{location}: {text} names the setup \"{setup}\", but no #[component] has that setup"),
                 };
-                self.orphan(function, message);
+                self.orphan(function, context, message);
             }
             return found.map(|owner| owner.usage);
         }
@@ -641,7 +661,11 @@ impl<'a> Walker<'a> {
         names.dedup();
         match (nearest.as_slice(), names.as_slice()) {
             ([], _) => {
-                self.orphan(function, format!("{location}: {text} is not inside an element with bq-setup"));
+                self.orphan(
+                    function,
+                    context,
+                    format!("{location}: {text} is not inside an element with bq-setup"),
+                );
                 None
             }
             ([owner, ..], [_]) => Some(*owner),
@@ -658,13 +682,13 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn handler(&mut self, on: On, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
+    fn handler(&mut self, on: On, tags: &Tags, scope: &Scope, location: String, function: Option<usize>, context: bool) {
         let value = match &on.setup {
             Some(setup) => format!("{setup}.{}", on.handler),
             None => on.handler.clone(),
         };
         let text = format!("{}=\"{value}\"", on.attribute);
-        let Some(owner) = self.owner(on.setup.as_deref(), scope, &text, &location, function) else {
+        let Some(owner) = self.owner(on.setup.as_deref(), scope, &text, &location, function, context) else {
             return;
         };
         self.usages[owner].handlers.push(HandlerUse {
@@ -675,9 +699,9 @@ impl<'a> Walker<'a> {
         });
     }
 
-    fn reference(&mut self, reference: RefName, tags: &Tags, scope: &Scope, location: String, function: Option<usize>) {
+    fn reference(&mut self, reference: RefName, tags: &Tags, scope: &Scope, location: String, function: Option<usize>, context: bool) {
         let text = format!("bq-ref=\"{}\"", reference.text);
-        let Some(owner) = self.owner(reference.setup.as_deref(), scope, &text, &location, function) else {
+        let Some(owner) = self.owner(reference.setup.as_deref(), scope, &text, &location, function, context) else {
             return;
         };
         let flags = scope.owner(owner);
