@@ -47,20 +47,10 @@ impl<U, S> Clone for SeaOrmStore<U, S> {
     }
 }
 
-fn set_timestamp<A: ActiveModelTrait>(active: &mut A, column: <A::Entity as EntityTrait>::Column, at: DateTime<Utc>) -> Result<(), DbErr>
-where
-    <A::Entity as EntityTrait>::Column: Copy,
-{
-    active
-        .try_set(column, at.fixed_offset().into())
-        .or_else(|_| active.try_set(column, at.into()))
-}
-
 impl<U, S> AuthStore<U::Model> for SeaOrmStore<U, S>
 where
     U: UserEntity,
     S: SessionEntity,
-    S::Column: Copy,
     U::Model: IntoActiveModel<U::ActiveModel> + Sync,
     U::ActiveModel: Send,
     S::Model: IntoActiveModel<S::ActiveModel>,
@@ -80,8 +70,8 @@ where
         let mut active = <S::ActiveModel as ActiveModelTrait>::default();
         active.try_set(S::TOKEN_HASH, new.token_hash.into())?;
         active.try_set(S::USER_ID, new.user_id.into())?;
-        set_timestamp(&mut active, S::CREATED_AT, new.created_at)?;
-        set_timestamp(&mut active, S::EXPIRES_AT, new.expires_at)?;
+        active.try_set(S::CREATED_AT, new.created_at.fixed_offset().into())?;
+        active.try_set(S::EXPIRES_AT, new.expires_at.fixed_offset().into())?;
         S::insert(active).exec_without_returning(&self.db).await?;
         Ok(())
     }
