@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use bq_html::{
     ast::{Element, Markups},
     conventions::ComponentOptions,
-    setup::mark,
+    setup::has_bare_setup,
 };
 use heck::ToUpperCamelCase;
-use proc_macro2::{Ident, Span};
+
 use syn::{ext::IdentExt, visit::Visit};
 
 use crate::walk::{Flags, html_blocks, parse};
@@ -118,8 +118,7 @@ impl Index {
             ComponentOptions::default()
         });
 
-        let mut block = (*item.block).clone();
-        if !mark(&mut block, &Ident::new("__BqSetup", Span::call_site())) {
+        if !has_bare_setup(&item.block) {
             return;
         }
         let name = options.name(&item.sig.ident);

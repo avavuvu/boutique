@@ -111,10 +111,10 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Err(error) = translate_params(&mut func) {
         return error.to_compile_error().into();
     }
-    let crate_path = crate_path();
-    if let Err(error) = attach_setup(&mut func, &options, &crate_path) {
+    if let Err(error) = attach_setup(&mut func, &options) {
         return error.to_compile_error().into();
     }
+    let crate_path = crate_path();
 
     let pascal = component_alias(&func.sig.ident);
     let docs = component_docs(&pascal, &func);
@@ -169,32 +169,24 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-fn attach_setup(func: &mut ItemFn, options: &ComponentOptions, crate_path: &proc_macro2::TokenStream) -> syn::Result<()> {
-    let setup = Ident::new("__BqSetup", proc_macro2::Span::call_site());
-    if !bq_html::setup::mark(&mut func.block, &setup) {
+fn attach_setup(func: &mut ItemFn, options: &ComponentOptions) -> syn::Result<()> {
+    if !bq_html::setup::has_bare_setup(&func.block) {
         let option = options
             .eager
             .as_ref()
             .map(Ident::span)
             .or_else(|| options.setup.as_ref().map(LitStr::span));
-        return match option {
-            Some(span) => Err(syn::Error::new(
+        if let Some(span) = option {
+            return Err(syn::Error::new(
                 span,
                 format!(
                     "`{}` has no bare `bq-setup`, so it has no setup to configure; add `bq-setup` to the element its setup attaches to",
                     func.sig.ident.unraw()
                 ),
-            )),
-            None => Ok(()),
-        };
+            ));
+        }
     }
-
-    let name = options.name(&func.sig.ident);
-    let declaration: [syn::Stmt; 2] = [
-        syn::parse_quote!(#[allow(dead_code)] enum #setup {}),
-        syn::parse_quote!(impl #crate_path::Setup for #setup { const NAME: &'static str = #name; }),
-    ];
-    func.block.stmts.splice(0..0, declaration);
+    bq_html::setup::mark(&mut func.block, &options.name(&func.sig.ident));
     Ok(())
 }
 

@@ -4,7 +4,7 @@ use syn::{Expr, Local, Path, ext::IdentExt, parse_quote, punctuated::Punctuated,
 
 use crate::{
     ast::*,
-    conventions::{ATTRS, BQ_SETUP, CHILDREN, FINISH_FN, maybe_setter, merges},
+    conventions::{ATTRS, CHILDREN, FINISH_FN, maybe_setter, merges},
     escape,
 };
 
@@ -186,9 +186,8 @@ impl Generator {
         }});
     }
 
-    fn build_attrs(&self, attrs_ident: &Ident, mut attrs: Vec<Attribute>) -> TokenStream {
+    fn build_attrs(&self, attrs_ident: &Ident, attrs: Vec<Attribute>) -> TokenStream {
         let crate_path = &self.crate_path;
-        setup_attrs(&mut attrs, crate_path);
         let (classes, id, named_attrs, spreads) = split_attrs(attrs);
         let mut stmts = vec![quote!(let mut #attrs_ident = #crate_path::Attrs::new();)];
         let mut skip = Vec::new();
@@ -316,7 +315,7 @@ impl Generator {
         }
     }
 
-    fn attrs(&self, mut attrs: Vec<Attribute>, build: &mut Builder) {
+    fn attrs(&self, attrs: Vec<Attribute>, build: &mut Builder) {
         if needs_attrs(&attrs) {
             let output_ident = &self.output_ident;
             let attrs_ident = Ident::new("__bq_attrs", Span::mixed_site());
@@ -328,7 +327,6 @@ impl Generator {
             return;
         }
 
-        setup_attrs(&mut attrs, &self.crate_path);
         let (classes, id, named_attrs, _) = split_attrs(attrs);
 
         if !classes.is_empty() {
@@ -498,36 +496,6 @@ fn needs_attrs(attrs: &[Attribute]) -> bool {
     }
     let repeated = names.iter().enumerate().any(|(index, name)| names[..index].contains(name));
     repeated || (dotted && names.iter().any(|name| name == "class"))
-}
-
-fn setup_attrs(attrs: &mut [Attribute], crate_path: &TokenStream) {
-    for attr in attrs {
-        if let Attribute::Named {
-            name,
-            attr_type: AttributeType::Normal { value, .. },
-        } = attr
-            && name.to_string() == BQ_SETUP
-        {
-            setup_value(value, crate_path);
-        }
-    }
-}
-
-fn setup_value(markup: &mut Markup<NoElement>, crate_path: &TokenStream) {
-    match markup {
-        Markup::Splice { expr, .. } => {
-            if let Expr::Path(path) = expr {
-                let path = path.clone();
-                *expr = parse_quote!(<#path as #crate_path::Setup>::NAME);
-            }
-        }
-        Markup::Block(block) => {
-            for markup in &mut block.markups.markups {
-                setup_value(markup, crate_path);
-            }
-        }
-        _ => {}
-    }
 }
 
 fn escaped(text: &str) -> String {
