@@ -17,7 +17,9 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 | 4.2, 4.7 | Later |
 | 5 Bun | Done in boutique and showroom |
 | 5 file structure, 6, 7, 8 | Later |
-| 9.2 | Done except licenses and `publish = false` (see below) |
+| 9.2 | Done except `publish = false` (licenses: `MIT OR Apache-2.0`) |
+| 3.12 Compression and static-file caching | Done (`Cache` policies; build assets immutable; `.vite/` hidden) |
+| Rough edges round 1 | Done: decisions 1–5 below and the bugs listed under "Known rough edges" as of 2026-10-15 |
 | 9.4 | Done |
 | Showroom migration | Done (showroom commits `bf91f7f`…`284b213`); view CSS colocated and ascii background as a component (`f7288bf`…`4005490`) |
 

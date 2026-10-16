@@ -1,4 +1,4 @@
-@layer bq.components {
+@layer bq.base {
     .error-page {
         display: flex;
         flex-direction: column;
