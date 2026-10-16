@@ -12,7 +12,7 @@ impl Default for AuthConfig {
         Self {
             login_url: "/login".into(),
             cookie_domain: None,
-            secure_cookies: !cfg!(debug_assertions),
+            secure_cookies: true,
             session_ttl_hours: 30 * 24,
             reset_ttl_hours: 1,
         }

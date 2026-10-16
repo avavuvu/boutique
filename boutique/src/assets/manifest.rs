@@ -18,7 +18,12 @@ struct Chunk {
     is_entry: bool,
 }
 
-pub struct Entry {
+struct Entry {
+    file: String,
+    styles: Vec<String>,
+}
+
+pub struct Asset {
     pub file: String,
     pub styles: Vec<String>,
 }
@@ -98,7 +103,14 @@ pub fn init(route: &str, dir: &str, live: bool) -> Result<(), ManifestError> {
     Ok(())
 }
 
-fn lookup<T>(name: &str, pick: impl FnOnce(&str, &Entry) -> T) -> Option<T> {
+fn asset(route: &str, entry: &Entry) -> Asset {
+    Asset {
+        file: format!("{route}/{}", entry.file),
+        styles: entry.styles.iter().map(|file| format!("{route}/{file}")).collect(),
+    }
+}
+
+pub fn entry(name: &str) -> Option<Asset> {
     let Some(manifest) = MANIFEST.get() else {
         tracing::warn!(entry = name, "asset requested before Server::router initialised the vite manifest");
         return None;
@@ -106,27 +118,16 @@ fn lookup<T>(name: &str, pick: impl FnOnce(&str, &Entry) -> T) -> Option<T> {
 
     let found = match manifest {
         Manifest::Live { route, path } => match read(path) {
-            Ok(entries) => entries.get(name).map(|entry| pick(route, entry)),
+            Ok(entries) => entries.get(name).map(|entry| asset(route, entry)),
             Err(error) => {
                 tracing::warn!(%error, "vite manifest not available");
                 return None;
             }
         },
-        Manifest::Loaded { route, entries } => entries.get(name).map(|entry| pick(route, entry)),
+        Manifest::Loaded { route, entries } => entries.get(name).map(|entry| asset(route, entry)),
     };
     if found.is_none() {
         tracing::warn!(entry = name, "no entry with this name in the vite manifest");
     }
     found
-}
-
-pub fn url(name: &str) -> Option<String> {
-    lookup(name, |route, entry| format!("{route}/{}", entry.file))
-}
-
-pub fn styles(name: &str) -> Vec<String> {
-    lookup(name, |route, entry| {
-        entry.styles.iter().map(|file| format!("{route}/{file}")).collect()
-    })
-    .unwrap_or_default()
 }

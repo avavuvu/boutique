@@ -66,18 +66,16 @@ impl Head {
     }
 
     pub fn entry(mut self, name: &str) -> Self {
-        for href in assets::manifest::styles(name) {
-            self = self.stylesheet(href);
-        }
-        match assets::manifest::url(name) {
-            Some(src) => self.module(src),
-            None => self,
-        }
+        let Some(asset) = assets::manifest::entry(name) else {
+            return self;
+        };
+        self.stylesheets.extend(asset.styles);
+        self.module(asset.file)
     }
 
     pub fn css(self, name: &str) -> Self {
-        match assets::manifest::url(name) {
-            Some(href) => self.stylesheet(href),
+        match assets::manifest::entry(name) {
+            Some(asset) => self.stylesheet(asset.file),
             None => self,
         }
     }
