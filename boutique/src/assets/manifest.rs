@@ -1,4 +1,10 @@
-use std::{collections::HashMap, fs, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt, fs, io,
+    path::{Path, PathBuf},
+    sync::OnceLock,
+};
 
 use serde::Deserialize;
 
@@ -19,71 +25,97 @@ pub struct Entry {
 
 type Entries = HashMap<String, Entry>;
 
-struct Config {
-    route: String,
-    path: String,
-    cache: OnceLock<Entries>,
+enum Manifest {
+    Live { route: String, path: PathBuf },
+    Loaded { route: String, entries: Entries },
 }
 
-static CONFIG: OnceLock<Config> = OnceLock::new();
+static MANIFEST: OnceLock<Manifest> = OnceLock::new();
 
-fn read(path: &str) -> Option<Entries> {
-    let text = fs::read_to_string(path).ok()?;
-    let chunks: HashMap<String, Chunk> = serde_json::from_str(&text).ok()?;
-    Some(
-        chunks
-            .into_values()
-            .filter(|chunk| chunk.is_entry)
-            .filter_map(|chunk| {
-                let entry = Entry {
-                    file: chunk.file,
-                    styles: chunk.css,
-                };
-                chunk.name.map(|name| (name, entry))
-            })
-            .collect(),
-    )
+#[derive(Debug)]
+pub enum ManifestError {
+    Read { path: PathBuf, source: io::Error },
+    Parse { path: PathBuf, source: serde_json::Error },
 }
 
-pub fn init(route: &str, dir: &str) {
-    let path = format!("{dir}/.vite/manifest.json");
-    let config = Config {
-        route: route.trim_end_matches('/').to_string(),
-        path,
-        cache: OnceLock::new(),
+impl fmt::Display for ManifestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ManifestError::Read { path, .. } => write!(f, "could not read {}, run the vite build first", path.display()),
+            ManifestError::Parse { path, .. } => write!(f, "could not parse {}", path.display()),
+        }
+    }
+}
+
+impl Error for ManifestError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ManifestError::Read { source, .. } => Some(source),
+            ManifestError::Parse { source, .. } => Some(source),
+        }
+    }
+}
+
+fn read(path: &Path) -> Result<Entries, ManifestError> {
+    let text = fs::read_to_string(path).map_err(|source| ManifestError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let chunks: HashMap<String, Chunk> = serde_json::from_str(&text).map_err(|source| ManifestError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(chunks
+        .into_values()
+        .filter(|chunk| chunk.is_entry)
+        .filter_map(|chunk| {
+            let entry = Entry {
+                file: chunk.file,
+                styles: chunk.css,
+            };
+            chunk.name.map(|name| (name, entry))
+        })
+        .collect())
+}
+
+pub fn init(route: &str, dir: &str, live: bool) -> Result<(), ManifestError> {
+    let route = route.trim_end_matches('/').to_string();
+    let path = Path::new(dir).join(".vite/manifest.json");
+
+    let manifest = if live {
+        if let Err(error) = read(&path) {
+            tracing::warn!(%error, "vite manifest not available yet");
+        }
+        Manifest::Live { route, path }
+    } else {
+        let entries = read(&path)?;
+        Manifest::Loaded { route, entries }
     };
 
-    if cfg!(debug_assertions) {
-        if read(&config.path).is_none() {
-            tracing::warn!("{} not found, run the vite build first", config.path);
-        }
-    } else {
-        let entries = read(&config.path).unwrap_or_else(|| panic!("{} not found, run the vite build before starting", config.path));
-        config.cache.set(entries).ok();
+    if MANIFEST.set(manifest).is_err() {
+        tracing::debug!("vite manifest already initialised");
     }
-
-    CONFIG.set(config).ok();
+    Ok(())
 }
 
-fn lookup<T>(name: &str, pick: impl Fn(&str, &Entry) -> T) -> Option<T> {
-    let Some(config) = CONFIG.get() else {
-        if cfg!(debug_assertions) {
-            panic!("asset {name:?} requested before the manifest was initialised, build the router with Server first");
-        }
-        tracing::warn!("manifest::init was not called");
+fn lookup<T>(name: &str, pick: impl FnOnce(&str, &Entry) -> T) -> Option<T> {
+    let Some(manifest) = MANIFEST.get() else {
+        tracing::warn!(entry = name, "asset requested before Server::router initialised the vite manifest");
         return None;
     };
 
-    let found = if cfg!(debug_assertions) {
-        read(&config.path).and_then(|entries| entries.get(name).map(|entry| pick(&config.route, entry)))
-    } else {
-        config
-            .cache
-            .get()
-            .and_then(|entries| entries.get(name).map(|entry| pick(&config.route, entry)))
+    let found = match manifest {
+        Manifest::Live { route, path } => match read(path) {
+            Ok(entries) => entries.get(name).map(|entry| pick(route, entry)),
+            Err(error) => {
+                tracing::warn!(%error, "vite manifest not available");
+                return None;
+            }
+        },
+        Manifest::Loaded { route, entries } => entries.get(name).map(|entry| pick(route, entry)),
     };
     if found.is_none() {
-        tracing::warn!("no entry named {name:?} in {}", config.path);
+        tracing::warn!(entry = name, "no entry with this name in the vite manifest");
     }
     found
 }

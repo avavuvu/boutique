@@ -13,11 +13,11 @@ pub fn is_htmx(headers: &HeaderMap) -> bool {
 }
 
 pub fn redirect(path: &str) -> Response {
-    (
-        StatusCode::OK,
-        [("HX-Redirect", HeaderValue::from_str(path).expect("invalid redirect path"))],
-    )
-        .into_response()
+    let location = HeaderValue::from_str(path).unwrap_or_else(|error| {
+        tracing::error!(path, %error, "invalid HX-Redirect path, redirecting to /");
+        HeaderValue::from_static("/")
+    });
+    (StatusCode::OK, [("HX-Redirect", location)]).into_response()
 }
 
 pub fn partial(target: &str, content: Markup) -> Markup {

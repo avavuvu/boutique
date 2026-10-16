@@ -8,7 +8,8 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use percent_encoding::percent_decode_str;
-use std::{convert::Infallible, time::Duration};
+use std::{convert::Infallible, io, time::Duration};
+use tokio::net::{TcpListener, ToSocketAddrs};
 use tower::{Service, ServiceBuilder};
 use tower_http::{
     compression::{
@@ -20,7 +21,7 @@ use tower_http::{
 };
 
 use crate::{
-    assets,
+    assets::{self, manifest::ManifestError},
     middleware::{cross_origin_protection, error_page},
 };
 
@@ -127,12 +128,12 @@ impl Server {
         self
     }
 
-    pub fn router<F>(self, fallback: F) -> Router
+    pub fn router<F>(self, app: F) -> Result<Router, ManifestError>
     where
         F: Service<Request, Response = Response, Error = Infallible> + Clone + Send + Sync + 'static,
         F::Future: Send + 'static,
     {
-        assets::manifest::init(&self.assets.0, &self.assets.1);
+        assets::manifest::init(&self.assets.0, &self.assets.1, self.debug)?;
 
         let mut router = Router::new().merge(assets::router());
 
@@ -150,9 +151,7 @@ impl Server {
         let policy = self.file_policy(Cache::Immutable, true);
         router = router.nest_service(route, files_service(policy, ServeDir::new(dir)));
 
-        let router = router
-            .fallback_service(fallback)
-            .layer(middleware::from_fn(cross_origin_protection));
+        let router = router.fallback_service(app).layer(middleware::from_fn(cross_origin_protection));
         let router = match self.error_page {
             Some(wrap) => wrap(router),
             None => router,
@@ -164,7 +163,7 @@ impl Server {
             router.layer(middleware::from_fn(https_redirect))
         };
 
-        router.layer(compression()).layer(TraceLayer::new_for_http())
+        Ok(router.layer(compression()).layer(TraceLayer::new_for_http()))
     }
 
     fn file_policy(&self, cache: Cache, hide_dotfiles: bool) -> FilePolicy {
@@ -180,15 +179,14 @@ impl Server {
         }
     }
 
-    pub async fn serve<F>(self, fallback: F, port: &str)
+    pub async fn serve<F>(self, app: F, address: impl ToSocketAddrs) -> io::Result<()>
     where
         F: Service<Request, Response = Response, Error = Infallible> + Clone + Send + Sync + 'static,
         F::Future: Send + 'static,
     {
-        let router = self.router(fallback);
-        let address = format!("0.0.0.0:{port}");
-        let listener = tokio::net::TcpListener::bind(&address).await.expect("failed to bind");
-        axum::serve(listener, router.into_make_service()).await.expect("server error");
+        let router = self.router(app).map_err(io::Error::other)?;
+        let listener = TcpListener::bind(address).await?;
+        axum::serve(listener, router.into_make_service()).await
     }
 }
 
