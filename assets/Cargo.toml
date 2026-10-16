@@ -1,0 +1,8 @@
+[package]
+name = "bq_assets"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Boutique's TypeScript, CSS and kit component sources, embedded for bq_components and bq_setups"

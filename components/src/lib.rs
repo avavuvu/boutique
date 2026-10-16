@@ -2,9 +2,9 @@ extern crate self as bq_components;
 
 mod attrs;
 #[cfg(feature = "ui")]
-mod button;
+bq_assets::module!(button);
 #[cfg(feature = "ui")]
-mod input;
+bq_assets::module!(input);
 
 pub use attrs::{AttrValue, Attrs};
 #[cfg(feature = "ui")]
@@ -18,12 +18,8 @@ pub use bq_macros::{attrs, component, html};
 pub use bon;
 pub use maud;
 
-mod files {
-    include!(concat!(env!("OUT_DIR"), "/files.rs"));
-}
-
 #[doc(hidden)]
-pub use files::FILES;
+pub use bq_assets::FILES;
 
 #[doc(hidden)]
 pub mod __private {

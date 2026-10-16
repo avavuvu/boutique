@@ -8,7 +8,7 @@ license.workspace = true
 description = "Build-time generator for boutique's TypeScript setup bindings and embedded JS and CSS"
 
 [dependencies]
-bq_components.workspace = true
+bq_assets.workspace = true
 bq_html.workspace = true
 heck = "0.5"
 proc-macro2 = { version = "1", features = ["span-locations"] }

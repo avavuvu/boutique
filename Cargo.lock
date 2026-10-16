@@ -310,10 +310,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bq_assets"
+version = "0.2.0"
+
+[[package]]
 name = "bq_components"
 version = "0.2.0"
 dependencies = [
  "bon",
+ "bq_assets",
  "bq_macros",
  "maud",
 ]
@@ -344,7 +349,7 @@ dependencies = [
 name = "bq_setups"
 version = "0.2.0"
 dependencies = [
- "bq_components",
+ "bq_assets",
  "bq_html",
  "heck 0.5.0",
  "proc-macro2",

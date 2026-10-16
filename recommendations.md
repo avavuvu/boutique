@@ -77,12 +77,13 @@ Both apps have a gitignored `.cargo/config.toml` that patches the boutique git d
 | Crate | Dir | Role |
 |---|---|---|
 | `boutique` | `boutique/` | Server, auth, sessions, errors, htmx helpers, `Head`/`base` views, assets manifest, cloudinary |
-| `bq_components` | `components/` | `Attrs`, concrete components (`Button`, `Input`, `Textarea`, feature `ui`), setups runtime (`components/src/setups.ts`), CSS, re-exports macros |
+| `bq_components` | `components/` | `Attrs`, concrete components (`Button`, `Input`, `Textarea`, feature `ui`, compiled from `bq_assets` with `bq_assets::module!`), re-exports macros |
+| `bq_assets` | `assets/` | Dependency-free. `files/` holds the setups runtime (`setups.ts`), CSS and the kit components' sources; `build.rs` embeds them as `FILES` |
 | `bq_macros` | `macros/` | `#[component]`, `attrs!`, `html!` entry |
 | `bq_html` | `html/` | Fork of `maud_macros` 0.27 adding components, `(..attrs)`, `@element`, `bq-*` attribute handling |
 | `bq_setups` | `setups/` | Build-time generator: walks Rust sources and writes `bindings/setups.ts` and `bindings/registry.ts` in the app |
 
-CSS lives in `components/src/style/` and next to each kit component.
+CSS lives in `assets/files/style/` and next to each kit component in `assets/files/`.
 
 Generated code resolves the crate path at expansion time (`crate_path()` in `bq_macros`): `::bq_components` or `::boutique::components`.
 

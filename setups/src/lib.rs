@@ -115,11 +115,11 @@ impl Generator {
         for (index, root) in self.roots.iter().enumerate() {
             let Some(dir) = &root.dir else {
                 embedded = Some(index);
-                for (path, text) in bq_components::FILES.iter().filter(|(path, _)| is_rust(path)) {
+                for (path, text) in bq_assets::FILES.iter().filter(|(path, _)| is_rust(path)) {
                     let folder = Path::new(path).parent().unwrap_or(Path::new(""));
                     sources.push(sources::Source {
                         root: index,
-                        name: format!("bq_components/src/{path}"),
+                        name: format!("bq_assets/files/{path}"),
                         module: module_path(Path::new(path)),
                         import: join_import(&root.import, folder),
                         text: text.to_string(),
@@ -504,7 +504,7 @@ fn is_rust(path: &str) -> bool {
 
 fn write_boutique(dir: &Path, kit: bool) {
     let mut keep = BTreeSet::new();
-    for (path, text) in bq_components::FILES
+    for (path, text) in bq_assets::FILES
         .iter()
         .filter(|(path, _)| !is_rust(path) && (kit || *path == RUNTIME_FILE))
     {

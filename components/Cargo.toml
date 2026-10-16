@@ -12,6 +12,7 @@ ui = []
 
 [dependencies]
 bon = "3"
+bq_assets.workspace = true
 bq_macros.workspace = true
 maud = { version = "0.27", features = ["axum"] }
 
