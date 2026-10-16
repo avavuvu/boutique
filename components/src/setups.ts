@@ -52,11 +52,11 @@ type Instance = {
     controller: AbortController;
     ready: boolean;
     settled: boolean;
-    handlers?: Record<string, unknown>;
+    handlers?: Record<string, unknown> | undefined;
     bound: WeakMap<Element, Set<string>>;
 };
 
-type Binding = { key: string; text: string; event: string; modifiers: Set<string>; setup?: string; handler?: string };
+type Binding = { key: string; text: string; event: string; modifiers: Set<string>; setup?: string | undefined; handler?: string };
 
 const ATTRIBUTE = "bq-setup";
 const REF = "bq-ref";
@@ -222,7 +222,8 @@ export function defineSetups(registry: Registry): void {
         }
         const owner = start?.closest(`[${ATTRIBUTE}]`);
         const names = owner ? namesOf(owner) : [];
-        if (owner && names.length === 1) return [owner, names[0]];
+        const [only] = names;
+        if (owner && names.length === 1 && only !== undefined) return [owner, only];
         warnOnce(
             element,
             text,
