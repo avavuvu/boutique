@@ -281,7 +281,7 @@ fn declarations(index: &Index, errors: &mut Vec<String>) -> BTreeMap<String, Dec
 }
 
 fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
-    let mut out = format!("import type {{ Setup }} from \"{runtime}\";\n\n");
+    let mut out = format!("import type {{ Setup }} from {};\n\n", ts_str(runtime));
 
     for name in declarations.keys() {
         let empty = Merged::default();
@@ -325,8 +325,12 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
                 let uses: Vec<String> = uses
                     .iter()
                     .map(|(event, target, tag)| {
-                        let tag = tag.as_ref().map(|tag| format!("\"{tag}\"")).unwrap_or_else(|| "string".into());
-                        format!("{{ event: \"{event}\"; tag: {tag}{} }}", target.suffix())
+                        let tag = tag.as_deref().map(ts_str).unwrap_or_else(|| "string".into());
+                        let target = target
+                            .name()
+                            .map(|target| format!("; target: {}", ts_str(target)))
+                            .unwrap_or_default();
+                        format!("{{ event: {}; tag: {tag}{target} }}", ts_str(event))
                     })
                     .collect();
                 format!("{handler}: {}", uses.join(" | "))
@@ -342,7 +346,11 @@ fn types(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &B
 }
 
 fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged: &BTreeMap<String, Merged>) -> String {
-    let mut out = format!("import type {{ Registry }} from \"{runtime}\";\nimport type * as setups from \"./setups\";\n");
+    let mut out = format!(
+        "import type {{ Registry }} from {};\nimport type * as setups from {};\n",
+        ts_str(runtime),
+        ts_str("./setups")
+    );
 
     let mut eager: Vec<(&str, Vec<String>)> = Vec::new();
     for declaration in declarations.values().filter(|declaration| declaration.eager) {
@@ -353,7 +361,7 @@ fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged:
         }
     }
     for (import, exports) in eager {
-        out.push_str(&format!("import {{ {} }} from \"{import}\";\n", exports.join(", ")));
+        out.push_str(&format!("import {{ {} }} from {};\n", exports.join(", "), ts_str(import)));
     }
 
     out.push_str("\nexport const registry: Registry = {\n");
@@ -364,15 +372,15 @@ fn registry(runtime: &str, declarations: &BTreeMap<String, Declaration>, merged:
         let tags = if setup.any { String::new() } else { quoted_list(setup.tags.iter()) };
         let many = quoted_list(setup.refs.iter().filter(|(_, reference)| reference.many).map(|(key, _)| key));
 
-        out.push_str(&format!("    \"{}\": {{\n", declaration.name));
+        out.push_str(&format!("    {}: {{\n", ts_str(&declaration.name)));
         out.push_str(&format!("        tags: [{tags}],\n"));
         out.push_str(&format!("        many: [{many}],\n"));
         if declaration.eager {
             out.push_str(&format!("        setup: {export} satisfies setups.{name},\n"));
         } else {
             out.push_str(&format!(
-                "        load: () => import(\"{}\").then((module) => module.{export} satisfies setups.{name}),\n",
-                declaration.import
+                "        load: () => import({}).then((module) => module.{export} satisfies setups.{name}),\n",
+                ts_str(&declaration.import)
             ));
         }
         out.push_str("    },\n");
@@ -444,11 +452,30 @@ fn tag_union(tags: &BTreeSet<String>, any: bool) -> String {
     if any || tags.is_empty() {
         return "string".into();
     }
-    tags.iter().map(|tag| format!("\"{tag}\"")).collect::<Vec<_>>().join(" | ")
+    tags.iter().map(|tag| ts_str(tag)).collect::<Vec<_>>().join(" | ")
 }
 
 fn quoted_list<'a>(items: impl Iterator<Item = &'a String>) -> String {
-    items.map(|item| format!("\"{item}\"")).collect::<Vec<_>>().join(", ")
+    items.map(|item| ts_str(item)).collect::<Vec<_>>().join(", ")
+}
+
+fn ts_str(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for character in text.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{2028}' | '\u{2029}' => out.push_str(&format!("\\u{:04x}", u32::from(character))),
+            character if character.is_control() => out.push_str(&format!("\\u{:04x}", u32::from(character))),
+            character => out.push(character),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn relative(from: &Path, to: &Path) -> String {

@@ -10,11 +10,11 @@ pub enum Target {
 }
 
 impl Target {
-    pub fn suffix(&self) -> &'static str {
+    pub fn name(&self) -> Option<&'static str> {
         match self {
-            Target::Element => "",
-            Target::Window => "; target: \"window\"",
-            Target::Document => "; target: \"document\"",
+            Target::Element => None,
+            Target::Window => Some("window"),
+            Target::Document => Some("document"),
         }
     }
 }
