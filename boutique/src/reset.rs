@@ -1,9 +1,12 @@
+use std::{error::Error, fmt};
+
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 use crate::{
-    password,
+    error::AppError,
+    password::{self, HashError},
     state::AuthState,
     store::{AuthStore, AuthUser, StoreError},
 };
@@ -14,12 +17,42 @@ const TOKEN_TYPE: &str = "password_reset";
 pub enum ResetError {
     InvalidToken,
     Store(StoreError),
-    Hash(argon2::password_hash::Error),
+    Hash(HashError),
+}
+
+impl fmt::Display for ResetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ResetError::InvalidToken => f.write_str("invalid or expired password reset token"),
+            ResetError::Store(_) => f.write_str("password reset failed"),
+            ResetError::Hash(_) => f.write_str("password reset failed"),
+        }
+    }
+}
+
+impl Error for ResetError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            ResetError::InvalidToken => None,
+            ResetError::Store(error) => Some(error),
+            ResetError::Hash(error) => Some(error),
+        }
+    }
 }
 
 impl From<StoreError> for ResetError {
     fn from(e: StoreError) -> Self {
         ResetError::Store(e)
+    }
+}
+
+impl From<ResetError> for AppError {
+    fn from(error: ResetError) -> Self {
+        match error {
+            ResetError::InvalidToken => AppError::message("This link is invalid or has expired"),
+            ResetError::Store(error) => error.into(),
+            ResetError::Hash(error) => AppError::internal("password reset", error),
+        }
     }
 }
 
@@ -52,7 +85,7 @@ fn decode_hex(hex: &str) -> Option<Vec<u8>> {
 /// returns `None` for an unknown email. callers must show the same message
 /// either way so the endpoint does not reveal which emails have accounts.
 pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<Option<(U, String)>, ResetError> {
-    let Some(user) = state.store.find_user_by_email(email).await.map_err(StoreError::from_debug)? else {
+    let Some(user) = state.store.find_user_by_email(email).await.map_err(StoreError::new)? else {
         return Ok(None);
     };
 
@@ -88,7 +121,7 @@ pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Res
         .store
         .find_user_by_id(&user_id)
         .await
-        .map_err(StoreError::from_debug)?
+        .map_err(StoreError::new)?
         .ok_or(ResetError::InvalidToken)?;
 
     mac(state.secret(), user.id(), expires, user.password_hash())
@@ -102,12 +135,13 @@ pub async fn complete<U: AuthUser>(state: &AuthState<U>, token: &str, new_passwo
     let user = verify_token(state, token).await?;
     let hash = password::hash(new_password).map_err(ResetError::Hash)?;
 
-    Ok(state.store.reset_password(user, hash).await.map_err(StoreError::from_debug)?)
+    Ok(state.store.reset_password(user, hash).await.map_err(StoreError::new)?)
 }
 
 #[cfg(test)]
 mod tests {
     use std::{
+        convert::Infallible,
         pin::pin,
         sync::{Arc, Mutex},
         task::{Context, Poll, Waker},
@@ -145,37 +179,37 @@ mod tests {
     }
 
     impl AuthStore<User> for Store {
-        type Error = ();
+        type Error = Infallible;
 
-        async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, ()> {
+        async fn find_user_by_email(&self, email: &str) -> Result<Option<User>, Infallible> {
             Ok(self.0.lock().unwrap().iter().find(|user| user.email == email).cloned())
         }
 
-        async fn find_user_by_id(&self, id: &str) -> Result<Option<User>, ()> {
+        async fn find_user_by_id(&self, id: &str) -> Result<Option<User>, Infallible> {
             Ok(self.0.lock().unwrap().iter().find(|user| user.id == id).cloned())
         }
 
-        async fn create_session(&self, _: NewSession) -> Result<(), ()> {
+        async fn create_session(&self, _: NewSession) -> Result<(), Infallible> {
             Ok(())
         }
 
-        async fn find_session_user(&self, _: &str, _: DateTime<Utc>) -> Result<Option<User>, ()> {
+        async fn find_session_user(&self, _: &str, _: DateTime<Utc>) -> Result<Option<User>, Infallible> {
             Ok(None)
         }
 
-        async fn delete_session(&self, _: &str) -> Result<(), ()> {
+        async fn delete_session(&self, _: &str) -> Result<(), Infallible> {
             Ok(())
         }
 
-        async fn delete_user_sessions(&self, _: &str) -> Result<(), ()> {
+        async fn delete_user_sessions(&self, _: &str) -> Result<(), Infallible> {
             Ok(())
         }
 
-        async fn delete_expired_sessions(&self, _: DateTime<Utc>) -> Result<(), ()> {
+        async fn delete_expired_sessions(&self, _: DateTime<Utc>) -> Result<(), Infallible> {
             Ok(())
         }
 
-        async fn reset_password(&self, mut user: User, password_hash: String) -> Result<User, ()> {
+        async fn reset_password(&self, mut user: User, password_hash: String) -> Result<User, Infallible> {
             user.password_hash = password_hash;
             Ok(user)
         }

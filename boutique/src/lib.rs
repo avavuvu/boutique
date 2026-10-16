@@ -32,7 +32,7 @@ pub use validator;
 
 pub use assets::manifest::ManifestError;
 pub use config::AuthConfig;
-pub use error::{AppError, AppResult, ErrorReport};
+pub use error::{AppError, AppResult, ErrorMessage, ErrorReport};
 pub use extractors::AuthenticatedUser;
 pub use run::run;
 pub use server::{Cache, Server};

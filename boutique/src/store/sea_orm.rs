@@ -7,7 +7,16 @@ use sea_orm::{
     sea_query::{Alias, ColumnDef, ForeignKey, ForeignKeyAction, Index, IndexCreateStatement, IntoIden, Table, TableCreateStatement},
 };
 
-use crate::store::{AuthStore, NewSession};
+use crate::{
+    error::AppError,
+    store::{AuthStore, NewSession},
+};
+
+impl From<DbErr> for AppError {
+    fn from(error: DbErr) -> Self {
+        AppError::internal("database", error)
+    }
+}
 
 pub trait UserEntity: EntityTrait {
     const ID: Self::Column;

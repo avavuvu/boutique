@@ -32,7 +32,7 @@ async fn resolve<U: AuthUser>(parts: &mut Parts, auth: &AuthState<U>) -> Result<
             .store
             .find_session_user(&token_hash, Utc::now())
             .await
-            .map_err(StoreError::from_debug)?,
+            .map_err(StoreError::new)?,
         None => None,
     };
 

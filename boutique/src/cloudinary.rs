@@ -1,4 +1,4 @@
-use std::{env, fmt};
+use std::{env, error, fmt};
 
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
@@ -30,6 +30,21 @@ impl fmt::Display for Error {
             Error::Request(error) => write!(f, "cloudinary request: {error}"),
             Error::Rejected(message) => write!(f, "cloudinary rejected the upload: {message}"),
         }
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            Error::Request(error) => Some(error),
+            Error::Rejected(_) => None,
+        }
+    }
+}
+
+impl From<Error> for crate::AppError {
+    fn from(error: Error) -> Self {
+        crate::AppError::internal("cloudinary", error)
     }
 }
 

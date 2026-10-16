@@ -1,20 +1,22 @@
+use std::{borrow::Cow, error::Error, fmt};
+
 use axum::{
     extract::FromRequestParts,
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
-use maud::Markup;
 use validator::ValidationErrors;
 
 use crate::{htmx::fragments, store::StoreError};
 
+#[derive(Debug)]
 pub enum AppError {
     NotFound,
     BadRequest,
     Status(StatusCode),
     Internal(String),
     Validation(ValidationErrors),
-    Fields(Vec<(&'static str, String)>),
+    Fields(Vec<ErrorMessage>),
     Message(String),
 }
 
@@ -22,10 +24,32 @@ pub type AppResult<T = Response> = Result<T, AppError>;
 
 const INTERNAL_MESSAGE: &str = "Something went wrong. Please try again.";
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ErrorMessage {
+    pub field: Option<Cow<'static, str>>,
+    pub text: String,
+}
+
+impl ErrorMessage {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            field: None,
+            text: text.into(),
+        }
+    }
+
+    pub fn field(field: impl Into<Cow<'static, str>>, text: impl Into<String>) -> Self {
+        Self {
+            field: Some(field.into()),
+            text: text.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ErrorReport {
     pub status: StatusCode,
-    pub messages: Vec<(Option<String>, String)>,
+    pub messages: Vec<ErrorMessage>,
 }
 
 impl ErrorReport {
@@ -49,50 +73,64 @@ impl<S: Send + Sync> FromRequestParts<S> for ErrorReport {
     }
 }
 
-fn validation_fields(errors: &ValidationErrors) -> Vec<(String, String)> {
-    let mut fields: Vec<(String, String)> = errors
+fn validation_messages(errors: &ValidationErrors) -> Vec<ErrorMessage> {
+    let mut messages: Vec<ErrorMessage> = errors
         .field_errors()
         .into_iter()
         .filter_map(|(field, errors)| {
-            let message = errors
+            let text = errors
                 .first()?
                 .message
                 .as_ref()
                 .map(|message| message.to_string())
                 .unwrap_or_else(|| format!("Invalid {field}"));
-            Some((field.to_string(), message))
+            Some(ErrorMessage::field(field.to_string(), text))
         })
         .collect();
-    fields.sort();
-    fields
-}
-
-fn field_fragments(fields: &[(String, String)]) -> Markup {
-    let fields: Vec<(&str, Option<&str>)> = fields
-        .iter()
-        .map(|(field, message)| (field.as_str(), Some(message.as_str())))
-        .collect();
-    fragments::field_errors(&fields)
+    messages.sort();
+    messages
 }
 
 impl AppError {
-    pub fn field(field: &'static str, message: impl Into<String>) -> Self {
-        AppError::Fields(vec![(field, message.into())])
+    pub fn field(field: impl Into<Cow<'static, str>>, text: impl Into<String>) -> Self {
+        AppError::Fields(vec![ErrorMessage::field(field, text)])
     }
 
     pub fn message(message: impl Into<String>) -> Self {
         AppError::Message(message.into())
     }
 
-    pub fn internal(context: &str, error: impl std::fmt::Debug) -> Self {
+    pub fn internal(context: &str, error: impl fmt::Debug) -> Self {
         AppError::Internal(format!("{context}: {error:?}"))
     }
 }
 
-#[cfg(feature = "sea-orm")]
-impl From<sea_orm::DbErr> for AppError {
-    fn from(error: sea_orm::DbErr) -> Self {
-        AppError::internal("database", error)
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::NotFound => f.write_str("not found"),
+            AppError::BadRequest => f.write_str("bad request"),
+            AppError::Status(status) => write!(f, "{status}"),
+            AppError::Internal(message) => write!(f, "internal error: {message}"),
+            AppError::Validation(_) => f.write_str("validation failed"),
+            AppError::Fields(messages) => {
+                f.write_str("invalid fields:")?;
+                for message in messages {
+                    write!(f, " {}", message.field.as_deref().unwrap_or("?"))?;
+                }
+                Ok(())
+            }
+            AppError::Message(message) => f.write_str(message),
+        }
+    }
+}
+
+impl Error for AppError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AppError::Validation(errors) => Some(errors),
+            _ => None,
+        }
     }
 }
 
@@ -116,39 +154,23 @@ impl From<ValidationErrors> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let (status, messages, body) = match self {
-            AppError::NotFound => (StatusCode::NOT_FOUND, Vec::new(), None),
-            AppError::BadRequest => (StatusCode::BAD_REQUEST, Vec::new(), None),
-            AppError::Status(status) => (status, Vec::new(), None),
-            AppError::Internal(message) => {
-                tracing::error!("{message}");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    vec![(None, INTERNAL_MESSAGE.to_string())],
-                    Some(fragments::error(INTERNAL_MESSAGE)),
-                )
+        let (status, messages, with_body) = match self {
+            AppError::NotFound => (StatusCode::NOT_FOUND, Vec::new(), false),
+            AppError::BadRequest => (StatusCode::BAD_REQUEST, Vec::new(), false),
+            AppError::Status(status) => (status, Vec::new(), false),
+            AppError::Internal(error) => {
+                tracing::error!(%error, "internal error");
+                (StatusCode::INTERNAL_SERVER_ERROR, vec![ErrorMessage::new(INTERNAL_MESSAGE)], true)
             }
-            AppError::Validation(errors) => {
-                let fields = validation_fields(&errors);
-                let body = field_fragments(&fields);
-                let messages = fields.into_iter().map(|(field, message)| (Some(field), message)).collect();
-                (StatusCode::UNPROCESSABLE_ENTITY, messages, Some(body))
-            }
-            AppError::Fields(fields) => {
-                let fields: Vec<(String, String)> = fields.into_iter().map(|(field, message)| (field.to_string(), message)).collect();
-                let body = field_fragments(&fields);
-                let messages = fields.into_iter().map(|(field, message)| (Some(field), message)).collect();
-                (StatusCode::UNPROCESSABLE_ENTITY, messages, Some(body))
-            }
-            AppError::Message(message) => {
-                let body = fragments::error(&message);
-                (StatusCode::UNPROCESSABLE_ENTITY, vec![(None, message)], Some(body))
-            }
+            AppError::Validation(errors) => (StatusCode::UNPROCESSABLE_ENTITY, validation_messages(&errors), true),
+            AppError::Fields(messages) => (StatusCode::UNPROCESSABLE_ENTITY, messages, true),
+            AppError::Message(message) => (StatusCode::UNPROCESSABLE_ENTITY, vec![ErrorMessage::new(message)], true),
         };
 
-        let mut response = match body {
-            Some(body) => (status, body).into_response(),
-            None => status.into_response(),
+        let mut response = if with_body {
+            (status, fragments::messages(&messages)).into_response()
+        } else {
+            status.into_response()
         };
         response.extensions_mut().insert(ErrorReport { status, messages });
         response

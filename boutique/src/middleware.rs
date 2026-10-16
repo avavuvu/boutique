@@ -6,7 +6,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::{error::ErrorReport, htmx, views};
+use crate::{
+    error::{ErrorMessage, ErrorReport},
+    htmx, views,
+};
 
 const PLAIN_TEXT_LIMIT: usize = 1024;
 
@@ -91,7 +94,7 @@ async fn plain_report(status: StatusCode, headers: &HeaderMap, body: Body) -> Er
         && let Ok(text) = std::str::from_utf8(&bytes)
         && !text.trim().is_empty()
     {
-        report.messages.push((None, text.trim().to_string()));
+        report.messages.push(ErrorMessage::new(text.trim()));
     }
     report
 }

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{error::Error, fmt, time::Duration};
 
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::response::{IntoResponseParts, ResponseParts};
@@ -7,7 +7,9 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    cookies, password,
+    cookies,
+    error::AppError,
+    password,
     state::AuthState,
     store::{AuthStore, AuthUser, NewSession, StoreError},
 };
@@ -18,9 +20,36 @@ pub enum LoginError {
     Store(StoreError),
 }
 
+impl fmt::Display for LoginError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoginError::InvalidCredentials => f.write_str("invalid credentials"),
+            LoginError::Store(_) => f.write_str("login failed"),
+        }
+    }
+}
+
+impl Error for LoginError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            LoginError::InvalidCredentials => None,
+            LoginError::Store(error) => Some(error),
+        }
+    }
+}
+
 impl From<StoreError> for LoginError {
     fn from(e: StoreError) -> Self {
         LoginError::Store(e)
+    }
+}
+
+impl From<LoginError> for AppError {
+    fn from(error: LoginError) -> Self {
+        match error {
+            LoginError::InvalidCredentials => AppError::message("Incorrect email or password"),
+            LoginError::Store(error) => error.into(),
+        }
     }
 }
 
@@ -42,7 +71,7 @@ pub async fn login<U: AuthUser>(state: &AuthState<U>, email: &str, plain_passwor
 }
 
 pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_password: &str) -> Result<U, LoginError> {
-    let user = state.store.find_user_by_email(email).await.map_err(StoreError::from_debug)?;
+    let user = state.store.find_user_by_email(email).await.map_err(StoreError::new)?;
 
     match user {
         Some(user) if password::verify(plain_password, user.password_hash()) => Ok(user),
@@ -60,7 +89,7 @@ pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Sessio
         created_at: now,
         expires_at: now + chrono::Duration::hours(ttl),
     };
-    state.store.create_session(session).await.map_err(StoreError::from_debug)?;
+    state.store.create_session(session).await.map_err(StoreError::new)?;
 
     Ok(Session(CookieJar::new().add(cookies::make(
         cookies::SESSION,
@@ -80,7 +109,7 @@ pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Sessio
 }
 
 pub async fn revoke_all<U: AuthUser>(state: &AuthState<U>, user_id: &str) -> Result<(), StoreError> {
-    state.store.delete_user_sessions(user_id).await.map_err(StoreError::from_debug)
+    state.store.delete_user_sessions(user_id).await.map_err(StoreError::new)
 }
 
 pub fn spawn_cleanup<U: AuthUser>(state: AuthState<U>, interval: Duration) -> tokio::task::JoinHandle<()> {

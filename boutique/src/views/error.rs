@@ -21,8 +21,8 @@ pub fn error_content(report: &ErrorReport, back: &str) -> Markup {
             h1 { (title(report)) }
             @if !report.messages.is_empty() {
                 ul {
-                    @for (_, message) in &report.messages {
-                        li { (message) }
+                    @for message in &report.messages {
+                        li { (message.text) }
                     }
                 }
             }

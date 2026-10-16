@@ -1,7 +1,7 @@
 #[cfg(feature = "sea-orm")]
 pub mod sea_orm;
 
-use std::{fmt, future::Future};
+use std::{error::Error, fmt, future::Future};
 
 use chrono::{DateTime, Utc};
 
@@ -21,7 +21,7 @@ pub struct NewSession {
 }
 
 pub trait AuthStore<U>: Clone + Send + Sync + 'static {
-    type Error: fmt::Debug + Send;
+    type Error: Error + Send + Sync + 'static;
 
     fn find_user_by_email(&self, email: &str) -> impl Future<Output = Result<Option<U>, Self::Error>> + Send;
 
@@ -40,22 +40,23 @@ pub trait AuthStore<U>: Clone + Send + Sync + 'static {
     fn reset_password(&self, user: U, password_hash: String) -> impl Future<Output = Result<U, Self::Error>> + Send;
 }
 
-pub struct StoreError(String);
+#[derive(Debug)]
+pub struct StoreError(Box<dyn Error + Send + Sync>);
 
 impl StoreError {
-    pub(crate) fn from_debug<E: fmt::Debug>(error: E) -> Self {
-        StoreError(format!("{error:?}"))
-    }
-}
-
-impl fmt::Debug for StoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+    pub(crate) fn new(error: impl Error + Send + Sync + 'static) -> Self {
+        StoreError(Box::new(error))
     }
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str("the auth store failed")
+    }
+}
+
+impl Error for StoreError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&*self.0)
     }
 }
