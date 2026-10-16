@@ -20,10 +20,6 @@
         text-wrap: pretty;
     }
 
-    textarea {
-        field-sizing: content;
-        min-block-size: 4lh;
-    }
 
     @media (prefers-reduced-motion: reduce) {
         *,

@@ -374,7 +374,7 @@
     display: none !important;
   }
 
-  :where(dialog, [popover]) {
+  :where(dialog) {
     margin: auto;
   }
 }

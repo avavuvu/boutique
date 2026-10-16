@@ -23,6 +23,11 @@
             }
         }
 
+        & textarea {
+            field-sizing: content;
+            min-block-size: 4lh;
+        }
+
         & .shell {
             display: flex;
 
