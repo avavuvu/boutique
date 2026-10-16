@@ -47,7 +47,8 @@ Import `style/index.css` first, then any of the optional entries:
 
 | Entry | Contents | Layer |
 |---|---|---|
-| `style/index.css` | Core: reset, tokens, roles, base defaults and layout primitives (`.flow`, `.article-layout`, `.stack`, `.cluster`, `.center`, `.sidebar`, `.switcher`, `.auto-grid`) | `bq.reset`, `bq.tokens`, `bq.base` |
+| `style/index.css` | Core: reset, tokens, roles and base defaults | `bq.reset`, `bq.tokens`, `bq.base` |
+| `style/layout.css` | Layout primitives: `.flow`, `.article-layout`, `.stack`, `.cluster`, `.center`, `.sidebar`, `.switcher`, `.auto-grid` | `bq.base` |
 | `style/components.css` | The UI kit's look: `.button`, `.input-component` | `bq.components` |
 | `style/elements.css` | Global element styles: `select`, checkbox/radio, `fieldset`, `legend`, `dialog`, `[popover]` | `bq.elements` |
 | `style/prose.css` | `.prose` for long-form text | `bq.components` |
