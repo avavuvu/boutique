@@ -5,7 +5,7 @@ use crate::hex;
 pub const LEN: usize = 32;
 
 pub fn new() -> String {
-    uuid::Uuid::new_v4().simple().to_string()
+    random_hex(LEN / 2)
 }
 
 pub fn is_hex(text: &str, len: usize) -> bool {

@@ -1,20 +1,22 @@
-use std::{error::Error, fmt};
+use std::{error, fmt};
 
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-
-pub use argon2;
 
 #[derive(Debug)]
 pub struct HashError(argon2::password_hash::Error);
 
 impl fmt::Display for HashError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "could not hash the password: {}", self.0)
+        f.write_str("could not hash the password")
     }
 }
 
-impl Error for HashError {}
+impl error::Error for HashError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
 
 pub fn hash(password: &str) -> Result<String, HashError> {
     let salt = SaltString::generate(&mut OsRng);

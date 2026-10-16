@@ -1,7 +1,7 @@
 use std::{error::Error, fmt, time::Duration};
 
 use axum::response::{IntoResponseParts, ResponseParts};
-pub use axum_extra::extract::cookie::CookieJar;
+use axum_extra::extract::cookie::CookieJar;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 
