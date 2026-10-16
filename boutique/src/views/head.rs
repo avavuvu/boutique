@@ -110,6 +110,14 @@ impl Head {
         self.theme = Some(name.into());
         self
     }
+
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    pub fn html_class(&self) -> Option<&str> {
+        self.class.as_deref()
+    }
 }
 
 fn font_type(href: &str) -> Option<&'static str> {
