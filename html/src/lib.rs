@@ -1,5 +1,6 @@
 #![allow(clippy::needless_pass_by_value)]
 
+#[doc(hidden)]
 pub mod ast;
 pub mod conventions;
 mod escape;

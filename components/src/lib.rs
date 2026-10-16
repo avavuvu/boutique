@@ -14,10 +14,16 @@ pub use input::{Input, Kind, Textarea, input, textarea};
 
 pub use bq_macros::{attrs, component, html};
 
+#[doc(hidden)]
 pub use bon;
 pub use maud;
 
-include!(concat!(env!("OUT_DIR"), "/files.rs"));
+mod files {
+    include!(concat!(env!("OUT_DIR"), "/files.rs"));
+}
+
+#[doc(hidden)]
+pub use files::FILES;
 
 #[doc(hidden)]
 pub mod __private {

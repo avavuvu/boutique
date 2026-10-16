@@ -123,6 +123,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
     func.attrs
         .extend(docs.iter().map(|line| -> syn::Attribute { syn::parse_quote!(#[doc = #line]) }));
+    func.attrs.push(syn::parse_quote!(#[allow(clippy::needless_pass_by_value)]));
 
     let fn_name = &func.sig.ident;
     let visibility = &func.vis;

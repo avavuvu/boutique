@@ -47,9 +47,9 @@ impl<E: ToTokens> ToTokens for Markups<E> {
 pub enum Markup<E> {
     Block(Block<E>),
     Lit(HtmlLit),
-    Splice { paren_token: Paren, expr: Expr },
+    Splice { paren_token: Paren, expr: Box<Expr> },
     Element(E),
-    ControlFlow(ControlFlow<E>),
+    ControlFlow(Box<ControlFlow<E>>),
     Semi(Semi),
 }
 
@@ -101,10 +101,8 @@ impl<E: MaybeElement> DiagnosticParse for Markup<E> {
     fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
         let markup = Self::diagnostic_parse_in_block(input, diagnostics)?;
 
-        if let Self::ControlFlow(ControlFlow {
-            kind: ControlFlowKind::Let(_),
-            ..
-        }) = &markup
+        if let Self::ControlFlow(control_flow) = &markup
+            && let ControlFlowKind::Let(_) = control_flow.kind
         {
             diagnostics.push(markup.span().error("`@let` bindings are only allowed inside blocks"))
         }
@@ -199,7 +197,7 @@ pub enum ElementName {
         at_token: At,
         element_token: kw::element,
         paren_token: Paren,
-        expr: Expr,
+        expr: Box<Expr>,
     },
     Component {
         path: Path,
@@ -915,7 +913,7 @@ impl Display for HtmlNamePunct {
 #[derive(Debug, Clone)]
 pub struct Toggler {
     pub bracket_token: Bracket,
-    pub cond: Expr,
+    pub cond: Box<Expr>,
 }
 
 impl DiagnosticParse for Toggler {
@@ -986,7 +984,7 @@ impl<E: ToTokens> ToTokens for ControlFlow<E> {
 pub enum ControlFlowKind<E> {
     Let(Local),
     If(IfExpr<E>),
-    For(ForExpr<E>),
+    For(Box<ForExpr<E>>),
     While(WhileExpr<E>),
     Match(MatchExpr<E>),
 }
@@ -1031,7 +1029,7 @@ impl<E: ToTokens> ToTokens for IfExpr<E> {
 
 #[derive(Debug, Clone)]
 pub enum IfOrBlock<E> {
-    If(IfExpr<E>),
+    If(Box<IfExpr<E>>),
     Block(Block<E>),
 }
 

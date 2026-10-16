@@ -37,24 +37,18 @@ impl Generator {
     fn markup<E: Into<Element>>(&self, markup: Markup<E>, build: &mut Builder) {
         match markup {
             Markup::Block(block) => {
-                if block.markups.markups.iter().any(|markup| {
-                    matches!(
-                        *markup,
-                        Markup::ControlFlow(ControlFlow {
-                            kind: ControlFlowKind::Let(_),
-                            ..
-                        })
-                    )
-                }) {
+                if block.markups.markups.iter().any(
+                    |markup| matches!(markup, Markup::ControlFlow(control_flow) if matches!(control_flow.kind, ControlFlowKind::Let(_))),
+                ) {
                     self.block(block, build);
                 } else {
                     self.markups(block.markups, build);
                 }
             }
             Markup::Lit(lit) => build.push_escaped(&lit.to_string()),
-            Markup::Splice { expr, .. } => self.splice(expr, build),
+            Markup::Splice { expr, .. } => self.splice(*expr, build),
             Markup::Element(element) => self.element(element.into(), build),
-            Markup::ControlFlow(control_flow) => self.control_flow(control_flow, build),
+            Markup::ControlFlow(control_flow) => self.control_flow(*control_flow, build),
             Markup::Semi(_) => {}
         }
     }
@@ -79,7 +73,7 @@ impl Generator {
         let element_name = match element.name {
             Some(ElementName::Static(name)) => name,
             Some(ElementName::Dynamic { expr, .. }) => {
-                return self.dynamic_element(expr, element.attrs, element.body, build);
+                return self.dynamic_element(*expr, element.attrs, element.body, build);
             }
             Some(ElementName::Component { path, args, .. }) => {
                 return self.component(path, args, element.attrs, element.body, build);
@@ -385,7 +379,7 @@ impl Generator {
         match control_flow.kind {
             ControlFlowKind::If(if_) => self.control_flow_if(if_, build),
             ControlFlowKind::Let(let_) => self.control_flow_let(let_, build),
-            ControlFlowKind::For(for_) => self.control_flow_for(for_, build),
+            ControlFlowKind::For(for_) => self.control_flow_for(*for_, build),
             ControlFlowKind::While(while_) => self.control_flow_while(while_, build),
             ControlFlowKind::Match(match_) => self.control_flow_match(match_, build),
         }
@@ -412,7 +406,7 @@ impl Generator {
 
     fn control_flow_if_or_block<E: Into<Element>>(&self, if_or_block: IfOrBlock<E>, build: &mut Builder) {
         match if_or_block {
-            IfOrBlock::If(if_) => self.control_flow_if(if_, build),
+            IfOrBlock::If(if_) => self.control_flow_if(*if_, build),
             IfOrBlock::Block(block) => self.block(block, build),
         }
     }
@@ -553,7 +547,7 @@ fn split_attrs(
 
     for attr in attrs {
         match attr {
-            Attribute::Class { name, toggler, .. } => classes.push((name, toggler.map(|toggler| toggler.cond))),
+            Attribute::Class { name, toggler, .. } => classes.push((name, toggler.map(|toggler| *toggler.cond))),
             Attribute::Id { name, .. } => id = Some(name),
             Attribute::Named { name, attr_type } => named_attrs.push((name, attr_type)),
             Attribute::Spread { expr, .. } => spreads.push(expr),
