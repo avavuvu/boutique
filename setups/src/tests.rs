@@ -554,7 +554,7 @@ fn handlers_outside_a_setup_are_errors() {
         errors,
         [
             r#"a.rs:3: bq-on:click="save" is not inside an element with bq-setup"#,
-            r#"a.rs:3: bq-on:click="dirty-form.save" is not inside an element with bq-setup=(DirtyForm)"#,
+            r#"a.rs:3: bq-on:click="dirty-form.save" is not inside the element with bare bq-setup in component `view`"#,
         ]
     );
 }

@@ -10,7 +10,7 @@ use bq_html::{
     },
     proc_macro2_diagnostics::Diagnostic,
 };
-use heck::{ToLowerCamelCase, ToUpperCamelCase};
+use heck::ToLowerCamelCase;
 use proc_macro2::{Span, TokenStream, TokenTree};
 use syn::{Expr, Lit, Stmt, parse::Parser, spanned::Spanned, visit::Visit};
 
@@ -533,7 +533,13 @@ impl<'a> Walker<'a> {
         if let Some(setup) = setup {
             let found = scope.path.iter().flatten().find(|owner| self.usages[owner.usage].name == setup);
             if found.is_none() {
-                let message = format!("{location}: {text} is not inside an element with bq-setup=({})", setup.to_upper_camel_case());
+                let message = match self.index.setups.iter().find(|declaration| declaration.name == setup) {
+                    Some(declaration) => format!(
+                        "{location}: {text} is not inside the element with bare bq-setup in component `{}`",
+                        declaration.function
+                    ),
+                    None => format!("{location}: {text} names the setup \"{setup}\", but no #[component] has that setup"),
+                };
                 self.orphan(function, message);
             }
             return found.map(|owner| owner.usage);
