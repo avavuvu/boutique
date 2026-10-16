@@ -8,6 +8,7 @@ pub struct Cloudinary {
     cloud_name: String,
     api_key: String,
     api_secret: String,
+    client: reqwest::Client,
 }
 
 #[derive(Serialize)]
@@ -57,11 +58,11 @@ impl From<reqwest::Error> for Error {
 #[derive(Deserialize)]
 struct UploadResponse {
     public_id: Option<String>,
-    error: Option<UploadError>,
+    error: Option<ApiError>,
 }
 
 #[derive(Deserialize)]
-struct UploadError {
+struct ApiError {
     message: String,
 }
 
@@ -71,6 +72,7 @@ impl Cloudinary {
             cloud_name: cloud_name.into(),
             api_key: api_key.into(),
             api_secret: api_secret.into(),
+            client: reqwest::Client::new(),
         }
     }
 
@@ -134,7 +136,7 @@ impl Cloudinary {
         }
     }
 
-    pub async fn upload(&self, bytes: Vec<u8>, public_id: &str, content_type: &str) -> Result<String, Error> {
+    pub async fn upload(&self, bytes: impl Into<reqwest::Body>, public_id: &str, content_type: &str) -> Result<String, Error> {
         let timestamp = chrono::Utc::now().timestamp().to_string();
 
         let parameters = [
@@ -145,7 +147,7 @@ impl Cloudinary {
         ];
         let signature = self.sign(&parameters);
 
-        let file = reqwest::multipart::Part::bytes(bytes).file_name("upload").mime_str(content_type)?;
+        let file = reqwest::multipart::Part::stream(bytes).file_name("upload").mime_str(content_type)?;
 
         let mut form = reqwest::multipart::Form::new()
             .text("api_key", self.api_key.clone())
@@ -156,7 +158,7 @@ impl Cloudinary {
         }
 
         let endpoint = format!("https://api.cloudinary.com/v1_1/{}/image/upload", self.cloud_name);
-        let response: UploadResponse = reqwest::Client::new().post(endpoint).multipart(form).send().await?.json().await?;
+        let response: UploadResponse = self.client.post(endpoint).multipart(form).send().await?.json().await?;
 
         match (response.public_id, response.error) {
             (Some(public_id), _) => Ok(public_id),
