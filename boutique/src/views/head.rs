@@ -1,18 +1,19 @@
 use crate::server::{HTMX_PATH, manifest_entry};
 
+#[must_use]
 pub struct Head {
-    pub title: String,
-    pub scripts: Vec<String>,
-    pub preloads: Vec<(String, Option<&'static str>)>,
-    pub stylesheets: Vec<String>,
-    pub favicon: Option<String>,
-    pub metadata: Option<Metadata>,
-    pub class: Option<String>,
-    pub lang: String,
-    pub theme: Option<String>,
-    pub viewport: String,
-    pub manifest: Option<String>,
-    pub theme_color: Option<String>,
+    pub(super) title: String,
+    pub(super) scripts: Vec<String>,
+    pub(super) preloads: Vec<(String, Option<&'static str>)>,
+    pub(super) stylesheets: Vec<String>,
+    pub(super) favicon: Option<String>,
+    pub(super) metadata: Option<Metadata>,
+    pub(super) class: Option<String>,
+    pub(super) lang: String,
+    pub(super) theme: Option<String>,
+    pub(super) viewport: String,
+    pub(super) manifest: Option<String>,
+    pub(super) theme_color: Option<String>,
 }
 
 impl Head {
@@ -137,13 +138,14 @@ impl OgType {
     }
 }
 
+#[must_use]
 pub struct Metadata {
-    pub description: String,
-    pub og_type: OgType,
-    pub image: Option<String>,
-    pub author: Option<String>,
-    pub url: Option<String>,
-    pub modified_time: Option<String>,
+    pub(super) description: String,
+    pub(super) og_type: OgType,
+    pub(super) image: Option<String>,
+    pub(super) author: Option<String>,
+    pub(super) url: Option<String>,
+    pub(super) modified_time: Option<String>,
 }
 
 impl Metadata {

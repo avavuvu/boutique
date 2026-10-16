@@ -29,6 +29,7 @@ use layers::{compression, cross_origin_protection, https_redirect};
 
 type Wrap = Box<dyn FnOnce(Router) -> Router + Send + Sync>;
 
+#[must_use]
 pub struct Server {
     assets: (String, String),
     static_dirs: Vec<(String, String, Cache)>,

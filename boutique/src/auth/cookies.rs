@@ -1,5 +1,5 @@
 use axum_extra::extract::cookie::{Cookie, SameSite};
-use time::Duration;
+use std::time::Duration;
 
 use super::AuthConfig;
 
@@ -12,12 +12,12 @@ fn with_domain(mut cookie: Cookie<'static>, config: &AuthConfig) -> Cookie<'stat
     cookie
 }
 
-pub(crate) fn make(key: &str, value: String, duration_hrs: i64, config: &AuthConfig) -> Cookie<'static> {
+pub(crate) fn make(key: &str, value: String, ttl: Duration, config: &AuthConfig) -> Cookie<'static> {
     let cookie = Cookie::build((key.to_string(), value))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
-        .max_age(Duration::hours(duration_hrs))
+        .max_age(time::Duration::try_from(ttl).unwrap_or(time::Duration::MAX))
         .secure(config.secure_cookies)
         .build();
 

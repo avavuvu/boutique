@@ -7,7 +7,7 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use super::{
-    AuthState, cookies, password,
+    AuthState, cookies, expiry, password,
     store::{AuthStore, AuthUser, NewSession, StoreError},
 };
 use crate::error::AppError;
@@ -80,12 +80,12 @@ pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_
 pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Session, StoreError> {
     let now = Utc::now();
     let token = new_token();
-    let ttl = state.config.session_ttl_hours;
+    let ttl = state.config.session_ttl;
     let session = NewSession {
         token_hash: hash(&token),
         user_id: user.id().to_string(),
         created_at: now,
-        expires_at: now + chrono::Duration::hours(ttl),
+        expires_at: expiry(now, ttl),
     };
     state.store.create_session(session).await.map_err(StoreError::new)?;
 

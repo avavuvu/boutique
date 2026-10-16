@@ -7,16 +7,23 @@ pub mod sea_orm;
 pub mod session;
 mod store;
 
+use std::time::Duration;
+
+use chrono::{DateTime, Utc};
+
 pub use extract::{AuthRejection, AuthenticatedUser};
 pub use store::{AuthStore, AuthUser, NewSession, StoreError};
 
+const HOUR: Duration = Duration::from_secs(60 * 60);
+
+#[must_use]
 #[derive(Clone, Debug)]
 pub struct AuthConfig {
-    pub login_url: String,
-    pub cookie_domain: Option<String>,
-    pub secure_cookies: bool,
-    pub session_ttl_hours: i64,
-    pub reset_ttl_hours: i64,
+    login_url: String,
+    cookie_domain: Option<String>,
+    secure_cookies: bool,
+    session_ttl: Duration,
+    reset_ttl: Duration,
 }
 
 impl Default for AuthConfig {
@@ -25,8 +32,8 @@ impl Default for AuthConfig {
             login_url: "/login".into(),
             cookie_domain: None,
             secure_cookies: true,
-            session_ttl_hours: 30 * 24,
-            reset_ttl_hours: 1,
+            session_ttl: 30 * 24 * HOUR,
+            reset_ttl: HOUR,
         }
     }
 }
@@ -48,15 +55,26 @@ impl AuthConfig {
         self
     }
 
-    pub fn session_ttl_hours(mut self, hours: i64) -> Self {
-        self.session_ttl_hours = hours;
+    pub fn session_ttl(mut self, ttl: Duration) -> Self {
+        self.session_ttl = ttl;
         self
     }
 
-    pub fn reset_ttl_hours(mut self, hours: i64) -> Self {
-        self.reset_ttl_hours = hours;
+    pub fn reset_ttl(mut self, ttl: Duration) -> Self {
+        self.reset_ttl = ttl;
         self
     }
+
+    pub fn uses_secure_cookies(&self) -> bool {
+        self.secure_cookies
+    }
+}
+
+fn expiry(from: DateTime<Utc>, ttl: Duration) -> DateTime<Utc> {
+    chrono::Duration::from_std(ttl)
+        .ok()
+        .and_then(|ttl| from.checked_add_signed(ttl))
+        .unwrap_or(DateTime::<Utc>::MAX_UTC)
 }
 
 #[derive(Clone)]

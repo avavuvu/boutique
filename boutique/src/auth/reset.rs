@@ -5,7 +5,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 use super::{
-    AuthState,
+    AuthState, expiry,
     password::{self, HashError},
     store::{AuthStore, AuthUser, StoreError},
 };
@@ -94,7 +94,7 @@ pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<O
 }
 
 pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> String {
-    let expires = (Utc::now() + chrono::Duration::hours(state.config.reset_ttl_hours)).timestamp();
+    let expires = expiry(Utc::now(), state.config.reset_ttl).timestamp();
     let signature = mac(state.secret(), user.id(), expires, user.password_hash())
         .finalize()
         .into_bytes();
@@ -145,6 +145,7 @@ mod tests {
         pin::pin,
         sync::{Arc, Mutex},
         task::{Context, Poll, Waker},
+        time::Duration,
     };
 
     use chrono::{DateTime, Utc};
@@ -243,7 +244,7 @@ mod tests {
 
     #[test]
     fn expired_token() {
-        let state = state().with_config(AuthConfig::default().reset_ttl_hours(-1));
+        let state = state().with_config(AuthConfig::default().reset_ttl(Duration::ZERO));
         let token = token_for(&state, &user("alice"));
         assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
     }
