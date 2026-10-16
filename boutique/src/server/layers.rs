@@ -55,3 +55,60 @@ pub(crate) async fn https_redirect(request: Request<Body>, next: Next) -> Respon
 
     next.run(request).await
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{Method, Request};
+
+    use super::is_cross_origin;
+
+    type Case = (Method, &'static [(&'static str, &'static str)], bool);
+
+    #[test]
+    fn cross_origin() {
+        let cases: &[Case] = &[
+            (Method::GET, &[("sec-fetch-site", "cross-site")], false),
+            (Method::HEAD, &[("origin", "https://evil.test"), ("host", "example.test")], false),
+            (Method::OPTIONS, &[("sec-fetch-site", "cross-site")], false),
+            (Method::POST, &[], false),
+            (Method::POST, &[("sec-fetch-site", "same-origin")], false),
+            (Method::POST, &[("sec-fetch-site", "none")], false),
+            (Method::POST, &[("sec-fetch-site", "same-site")], true),
+            (Method::POST, &[("sec-fetch-site", "cross-site")], true),
+            (
+                Method::POST,
+                &[("sec-fetch-site", "same-origin"), ("origin", "https://evil.test")],
+                false,
+            ),
+            (Method::POST, &[("origin", "https://example.test"), ("host", "example.test")], false),
+            (
+                Method::POST,
+                &[("origin", "http://example.test:3000"), ("host", "example.test:3000")],
+                false,
+            ),
+            (Method::POST, &[("origin", "https://evil.test"), ("host", "example.test")], true),
+            (
+                Method::POST,
+                &[("origin", "https://example.test:8080"), ("host", "example.test")],
+                true,
+            ),
+            (
+                Method::POST,
+                &[("origin", "https://sub.example.test"), ("host", "example.test")],
+                true,
+            ),
+            (Method::POST, &[("origin", "null"), ("host", "example.test")], true),
+            (Method::POST, &[("origin", "https://example.test")], true),
+            (Method::DELETE, &[("origin", "https://evil.test"), ("host", "example.test")], true),
+        ];
+
+        for (method, headers, expected) in cases {
+            let mut request = Request::builder().method(method.clone()).uri("/");
+            for (name, value) in *headers {
+                request = request.header(*name, *value);
+            }
+            let request = request.body(()).unwrap();
+            assert_eq!(is_cross_origin(&request), *expected, "{method} {headers:?}");
+        }
+    }
+}

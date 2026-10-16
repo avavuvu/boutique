@@ -6,6 +6,8 @@ pub mod reset;
 pub mod sea_orm;
 pub mod session;
 mod store;
+#[cfg(test)]
+mod testing;
 
 use std::time::Duration;
 

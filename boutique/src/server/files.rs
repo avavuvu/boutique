@@ -114,3 +114,31 @@ fn has_dotfile(path: &str) -> bool {
     let decoded = percent_decode_str(path).decode_utf8_lossy();
     decoded.split(['/', '\\']).any(|segment| segment.starts_with('.'))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::has_dotfile;
+
+    #[test]
+    fn dotfiles() {
+        let cases = [
+            ("/", false),
+            ("/app-1234.js", false),
+            ("/assets/app.min.css", false),
+            ("/assets/..app.css", true),
+            ("/.vite/manifest.json", true),
+            ("/assets/.hidden", true),
+            ("/assets/.hidden/app.js", true),
+            ("/%2evite/manifest.json", true),
+            ("/%2Evite/manifest.json", true),
+            ("/assets%2f.vite/manifest.json", true),
+            ("/assets/%5c.vite", true),
+            ("/assets\\.vite", true),
+            ("/../secret", true),
+        ];
+
+        for (path, expected) in cases {
+            assert_eq!(has_dotfile(path), expected, "{path}");
+        }
+    }
+}
