@@ -20,7 +20,7 @@ mod nested {
 }
 
 #[component(setup = "menu")]
-fn menu_panel(#[builder(default)] attrs: bq_components::Attrs, #[builder(default = html! {})] children: Markup) -> Markup {
+fn menu_panel(#[default] attrs: bq_components::Attrs, #[default = html! {}] children: Markup) -> Markup {
     html! { nav bq-setup (..attrs) { (children) } }
 }
 

@@ -12,7 +12,7 @@ proc-macro = true
 
 [dependencies]
 bq_html.workspace = true
-heck = "0.5"
+
 proc-macro-crate = "3"
 proc-macro2 = "1"
 quote = "1"
