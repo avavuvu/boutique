@@ -19,6 +19,7 @@ use walk::{Tags, Usage, Walker};
 
 const BOUTIQUE: &str = "boutique";
 const RUNTIME: &str = "./boutique/setups";
+const RUNTIME_FILE: &str = "setups.ts";
 
 struct Root {
     dir: Option<PathBuf>,
@@ -96,9 +97,8 @@ impl Generator {
         }
 
         fs::create_dir_all(&self.out).expect("create the bindings folder");
-        if self.roots.iter().any(|root| root.dir.is_none()) {
-            write_boutique(&self.out.join(BOUTIQUE));
-        }
+        let kit = self.roots.iter().any(|root| root.dir.is_none());
+        write_boutique(&self.out.join(BOUTIQUE), kit);
         write_if_changed(&self.out.join("setups.ts"), &types);
         write_if_changed(&self.out.join("registry.ts"), &registry);
     }
@@ -455,9 +455,9 @@ fn is_rust(path: &str) -> bool {
     Path::new(path).extension().is_some_and(|extension| extension == "rs")
 }
 
-fn write_boutique(dir: &Path) {
+fn write_boutique(dir: &Path, kit: bool) {
     let mut keep = BTreeSet::new();
-    for (path, text) in bq_components::FILES.iter().filter(|(path, _)| !is_rust(path)) {
+    for (path, text) in bq_components::FILES.iter().filter(|(path, _)| !is_rust(path) && (kit || *path == RUNTIME_FILE)) {
         let target = dir.join(path);
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).unwrap_or_else(|error| panic!("create {}: {error}", parent.display()));
