@@ -77,14 +77,14 @@ Both apps have a gitignored `.cargo/config.toml` that patches the boutique git d
 | Crate | Dir | Role |
 |---|---|---|
 | `boutique` | `boutique/` | Server, auth, sessions, errors, htmx helpers, `Head`/`base` views, assets manifest, cloudinary |
-| `bq_components` | `components/` | `Attrs`, `Setup` trait, concrete components (`Button`, `Input`, `Textarea`), setups runtime (`components/src/setups.ts`), re-exports macros |
-| `bq_macros` | `macros/` | `#[component]`, `attrs!`, `setup!`, re-exports `html!` |
+| `bq_components` | `components/` | `Attrs`, concrete components (`Button`, `Input`, `Textarea`, feature `ui`), setups runtime (`components/src/setups.ts`), CSS, re-exports macros |
+| `bq_macros` | `macros/` | `#[component]`, `attrs!`, `html!` entry |
 | `bq_html` | `html/` | Fork of `maud_macros` 0.27 adding components, `(..attrs)`, `@element`, `bq-*` attribute handling |
 | `bq_setups` | `setups/` | Build-time generator: walks Rust sources and writes `bindings/setups.ts` and `bindings/registry.ts` in the app |
 
-CSS lives in `style/` at the workspace root (not inside any crate). It moves to `components/src/style/` (see 9.4).
+CSS lives in `components/src/style/` and next to each kit component.
 
-Generated code from `bq_html` and `bq_macros` uses absolute paths like `::bq_components::Attrs` and `::bq_components::maud::…`. This is why apps currently need `bq_components` as a direct dependency (relevant to 1.1).
+Generated code resolves the crate path at expansion time (`crate_path()` in `bq_macros`): `::bq_components` or `::boutique::components`.
 
 ### Commands
 
@@ -732,3 +732,57 @@ defineSetups(registry);
 - `cargo publish --dry-run` passes for `bq_components` and `bq_setups`.
 - The restored `setups/src/tests.rs` passes; only expected import paths in generated `registry.ts`/`setups.ts` may change, from `@bq/components/src/…` to relative paths.
 - Showroom builds with `bun run build` and `bun run typecheck` after migration, without any `@bq` alias.
+
+## 10. Code health
+
+From an audit on 2026-10-16. Goal: same behaviour (except the listed bug fixes), clearer code. Each item says which crate it touches. Bugs get exactly one regression test each (**Test:**); everything else is verified by the restored tests, `cargo clippy --workspace --all-features`, and building showroom and crossword.
+
+### 10.0 Formatting
+`rustfmt.toml` with `max_width = 140` at the root; format the whole workspace in one commit that changes nothing else.
+
+### 10.1 Bugs
+
+| # | Crate | Bug | Fix |
+|---|---|---|---|
+| a | `bq_macros` | `#[component]` breaks on generic components: elided lifetimes are placed after named params (bon puts them first), lifetimes inside `fn(&str)`/`Fn(..)` are counted though bon skips them, `where` clauses are dropped from the `Render` impl. | Before emitting `#[bon::builder]`, name every elided input lifetime explicitly in `func.sig`; build the `Render` impl from `split_for_impl()` + the where clause; delete `count_elided_lifetimes`. **Test:** one generic component with a `where` clause and a `&str` param. |
+| b | `bq_html`, `bq_components` | Three attribute-merging paths disagree: `attrs_merged` (compile-time strings), `component_attrs` (builds `Attrs`), and `Attrs` at runtime. `b bq-ref=[Some("own")] (..spread)` loses the spread value; `b class (..spread)` drops the bare `class`; `class=""` differs between paths. | Plain elements keep maud's path. Any element with a spread, a repeated name, or `class=` next to `.class` builds an `Attrs` (id, statics in source order, `extend_except(spread, skip)`) and writes it with one `Attrs::write_to`. Delete `attrs_merged`, `Rest`, `class_part`, the generator's `merges`, `__value`, `write_attrs`. **Test:** the three divergences. |
+| c | `bq_setups` | Orphan `bq-ref`/`bq-on` errors found while walking a function *in context* (followed helper or component) are discarded (`walk.rs` drops deferred orphans whose function is in `followed`); a helper used inside and outside a setup is only checked inside. Wrong refs pass the build. | Orphans found with a non-empty scope or frame are errors immediately; only context-free walks defer. Superseded by 10.3's call-graph walk. **Test:** wrong-prefix ref in a helper called inside a setup. |
+| d | `bq_setups` | An `html!` that fails to parse is dropped silently, followed by a misleading "not reached" warning. | Record a diagnostic ("html! at … could not be parsed; its bq-* attributes are ignored"); never emit "not reached" for a function with unparsed blocks. |
+| e | `bq_setups` | False errors for `let x: Markup = html!{}` (only `Pat::Ident` matched), `impl` methods used as helpers (never indexed), and `#[cfg(test)]` code (analysed). Functions are keyed by bare name, so `a::row`/`b::row` and `other_crate::row` resolve wrongly. | Match `Pat::Type`; index impl methods; skip `#[cfg(test)]` items; key functions by (file, module path, name) and use path qualifiers when present. **Test:** one case covering typed `let` and an impl-method helper. |
+| f | `bq_setups` | Generated TS is not escaped (`@element("x\"y")` emits `Setup<"x"y">`). | `ts_str()` for every string written into TS. |
+| g | `boutique` | `htmx::redirect` panics on an invalid header value (reachable from the `AuthenticatedUser` extractor through `login_url`); `Server::serve` `expect`s on bind/serve; a missing manifest panics inside `router()` in release and behaves differently in debug. | `redirect` logs and falls back; `serve(app, addr: impl ToSocketAddrs) -> io::Result<()>`; `router()` returns `Result<Router, ManifestError>` (or `serve` reports it); one manifest behaviour chosen by `Server::debug`. |
+
+### 10.2 Shared conventions and dead code (`bq_html`, `bq_macros`, `bq_components`)
+- **Dead typed-setup pipeline.** Since 2.1, nothing implements `Setup` by hand or writes `bq-setup=(…)`. Put the setup *name* in the marker and have the bare-setup pass emit a literal; delete the `Setup` trait (or make it `doc(hidden)` if still needed), `setup_attrs`, `setup_value` and the `enum __BqSetup` injection. `html!` rejects `bq-setup` with a value, with a spanned error.
+- **Marker protocol.** Replace the token-level `has_bare` heuristic with AST-based detection shared by `#[component]` and `bq_setups` (`bq_html::setup::has_bare_setup`). Use a marker no user would write. Mark every `html!` in a component body.
+- **`bq_html::conventions`**: one home for `HTML_MACROS` (the accepted macro names; `is_html_macro(&syn::Path)`), prop names `attrs`/`children`, finish fn `build`, `maybe_` prefix, `merges()`, `kebab()`, setup/TS naming (`setup_name`, `ts_type_name`, `ts_export_name`, `component_alias`), the `bq-setup`/`bq-ref`/`bq-on:` constants, and `ComponentOptions`. Every crate uses it; delete the copies (`on::kebab`, `"__BqSetup"` literals, last-segment `html` checks).
+- **`Attrs` internals.** Move `__text`, `__flag`, `__class`, `__extend*` into `__private` as free functions (or a sealed trait); take `PreEscaped<String>` where the value must already be escaped.
+- **Public surface.** `bq_html::ast` and `bq_components::FILES` become `#[doc(hidden)]`; `pub use bon` is `#[doc(hidden)]`; `macros/Cargo.toml` description no longer mentions `setup!`. `#[component]` emits `#[allow(clippy::needless_pass_by_value)]`. Box large `ElementName` variants.
+- **Fork isolation.** Move boutique's additions out of the maud files into `ast/ext.rs` and `generate/ext.rs` (or similar) so upstream files only carry small hooks; record the upstream version (`maud_macros 0.27.0`) in the crate.
+
+### 10.3 `bq_setups` structure
+- **Pre-parsed index.** One `html.rs` with `parse` (keeps diagnostics), a single `HtmlFinder` visitor (tokens, flags, binding), and `Flags`, shared by index and walk. Every `html!` is parsed once, nested ones included.
+- **Call-graph walk.** Build callers/callees in the index; walk once from roots (functions with no callers, plus one per cycle) with one `visiting` guard. Removes the probe pass, `reached`/`followed`, most orphan triage and the exponential re-walking.
+- **Diagnostics.** `Loc { file, line, column }`, `Diagnostic { level, loc, message, via }`, a sorted, deduplicating sink. `Generator::try_write() -> Result<Report, Failure>`; `write()` prints every diagnostic and exits non-zero instead of panicking, keeping warnings. Parse errors carry locations.
+- **Model.** One `TagSet` (replaces three tag representations); one declaration type; `enum Root { Dir, Embedded }`; key setups by name and derive TS names at emission; named structs instead of tuples.
+- **Emission.** `write!`-based, with `ts_str` escaping (10.1f).
+- **Embedded files crate.** Move the `build.rs`-generated `FILES` into a tiny dependency-free crate (`bq_assets`), used by `bq_components` and `bq_setups`, so the generator no longer compiles `bq_components`, `bq_macros`, `bon` and `maud` for the host.
+- **Layout:** `lib.rs` (Generator), `sources.rs`, `diagnostics.rs`, `html.rs`, `index/{mod,collect,graph}.rs`, `attrs.rs`, `walk/{mod,scope,frame}.rs`, `model.rs`, `emit/{types,registry,ts}.rs`, `fs.rs`.
+
+### 10.4 `boutique` crate
+- **Errors.** `std::error::Error` + `Debug` + `Display` on every error type. `AuthStore::Error: Error + Send + Sync + 'static`; `StoreError(Box<dyn Error + Send + Sync>)` with `source()`. `From<LoginError | ResetError | UploadError | cloudinary::Error> for AppError` (infrastructure → `Internal`, domain → default 422 message). Wrap argon2 errors in `password::HashError`. One `ErrorMessage { field: Option<Cow<'static, str>>, text }` shape for `AppError::Fields`, validation, `ErrorReport` and the fragments. `From<DbErr>` moves into the sea-orm module.
+- **Manifest.** `static MANIFEST: OnceLock<Manifest>` with `enum Manifest { Live { route, path }, Loaded { route, entries } }`, chosen by `Server::debug`, not `cfg!`. One lookup per `Head::entry`. `AuthConfig::secure_cookies` default no longer uses `cfg!`.
+- **Layout and surface.** Modules: `error/{mod,report,fragments}`, `server/{mod,files,layers,error_page,assets,dev}`, `auth/{mod,store,session,reset,password,extract,sea_orm/{store,migration}}`, `htmx`, `views/`, `forms`, `ids`, `cloudinary`. Root re-exports are canonical and modules private where covered; keep `pub use auth::{session, reset, password}` and the sea-orm store path working. Delete `htmx::oob_only`, `fragments::from_errors`, `AuthUser::email`. Internal helpers (`cookies::*`, `cross_origin_protection`, manifest functions) become `pub(crate)`. `AuthState` fields private.
+- **Config.** Private fields and setters on `AuthConfig`, `Head`, `Metadata`; durations as `std::time::Duration`, converted at the edges. `#[must_use]` on builder types.
+- **Naming.** `Head::css` → `entry_css`; `Metadata::with_image`/`with_modified_time` → `image`/`modified_time`; `session::hash` → `token_hash`; `base(head, …)`; `Server::router(app)`; consistent `_with` naming for cache variants.
+- **Internals.** `Mount { route, path, cache, kind }` instead of parallel vectors; `header_str` helper; split `error_page` middleware into small functions; header-name constants; one private `hex` module; `run` → `server/dev.rs`; structured `tracing` fields; log the swallowed error in `session::revoke`; same rejection type for both `AuthenticatedUser` extractors.
+- **sea-orm store.** Table/column names in `create_sessions_table` come from the entities; require `DateTimeWithTimeZone` (drop the silent fallback).
+- **Forms and cloudinary.** Rename cloudinary's private `UploadError` to `ApiError`; `form::UploadError::Unreadable(MultipartError)`; `upload(bytes: impl Into<reqwest::Body>)` with a client stored in `Cloudinary`; `blank_to_none(&str)`.
+- **Dependencies.** Drop `rand_core` (use `argon2`'s `std` feature), `validator`'s `derive` feature, `uuid` (use the token generator). Re-export only crates whose types appear in boutique's public API (`axum`, `maud`, `validator`, `chrono`); put `CookieJar` in the root/prelude.
+- **Tests.** Small table tests for the pure security functions `is_cross_origin` and `has_dotfile`; move the reset tests' mock store into `#[cfg(test)] mod testing`.
+
+### 10.5 `#[component]` structure (`bq_macros`)
+Split `macros/src/lib.rs` into `crate_path.rs`, `attrs.rs`, `component/{mod,params,setup,render,docs}.rs`. Parse each parameter once into `Param { name, ty, role, default: None | Default | Expr | Implicit }` and generate both the bon attributes and the docs from it (no round trip through `#[builder]` attributes). Spanned errors for non-identifier patterns, receivers, `#[positional]` with `#[default]`, and a non-`Markup` return type. Docs only on the function; drop the Type column and the `tidy` string hack (print defaults as written). Stop accepting raw `#[builder(...)]` on component parameters.
+
+### 10.6 Auth traits (breaking)
+`trait AuthStore { type User: AuthUser; type Error; … }`, `AuthState<S: AuthStore>`, `AuthUser { id, password_hash }`. `UserEntity` no longer duplicates `password_hash` if avoidable. Migrate showroom and crossword (`models/user.rs`, `state.rs`).
