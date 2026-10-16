@@ -125,7 +125,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     let state_mod = format_ident!("{fn_name}_builder");
     let alias = (fn_name.unraw() != pascal).then(|| {
         let alias = Ident::new(&pascal, fn_name.span());
-        quote!(#visibility use #fn_name as #alias;)
+        quote!(#[allow(unused_imports)] #visibility use #fn_name as #alias;)
     });
 
     let elided = count_elided_lifetimes(&func);
