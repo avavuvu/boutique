@@ -1,5 +1,4 @@
-use bq_html::setup::ComponentOptions;
-use heck::ToUpperCamelCase;
+use bq_html::conventions::{ATTRS, CHILDREN, ComponentOptions, FINISH_FN, MAYBE_PREFIX, component_alias};
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use quote::{format_ident, quote};
@@ -117,7 +116,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
         return error.to_compile_error().into();
     }
 
-    let pascal = func.sig.ident.unraw().to_string().to_upper_camel_case();
+    let pascal = component_alias(&func.sig.ident);
     let docs = component_docs(&pascal, &func);
     if func.attrs.iter().any(is_doc) {
         func.attrs.push(syn::parse_quote!(#[doc = ""]));
@@ -129,6 +128,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     let visibility = &func.vis;
     let builder = format_ident!("{pascal}Builder");
     let state_mod = format_ident!("{fn_name}_builder");
+    let finish_fn = Ident::new(FINISH_FN, proc_macro2::Span::call_site());
     let alias = (fn_name.unraw() != pascal).then(|| {
         let alias = Ident::new(&pascal, fn_name.span());
         quote!(#[allow(unused_imports)] #visibility use #fn_name as #alias;)
@@ -152,7 +152,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
             crate = #crate_path::bon,
             builder_type(name = #builder, doc { #(#[doc = #docs])* }),
             state_mod = #state_mod,
-            finish_fn = build,
+            finish_fn = #finish_fn,
             derive(Clone)
         )]
         #func
@@ -161,7 +161,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         impl #impl_generics #crate_path::maud::Render for #builder #type_generics #where_clause {
             fn render(&self) -> #crate_path::maud::Markup {
-                ::core::clone::Clone::clone(self).build()
+                ::core::clone::Clone::clone(self).#finish_fn()
             }
         }
     };
@@ -251,7 +251,7 @@ fn translate_params(func: &mut ItemFn) -> syn::Result<()> {
             };
             if is_type(&typed.ty, "bool") {
                 translated.push(syn::parse_quote!(#[builder(default = false)]));
-            } else if (name == "attrs" && is_type(&typed.ty, "Attrs")) || name == "children" {
+            } else if (name == ATTRS && is_type(&typed.ty, "Attrs")) || name == CHILDREN {
                 translated.push(syn::parse_quote!(#[builder(default)]));
             }
         }
@@ -390,8 +390,8 @@ fn props(func: &ItemFn) -> Vec<Prop> {
 
             let role = match name.as_str() {
                 _ if options.start_fn => Role::Positional,
-                "children" => Role::Children,
-                "attrs" => Role::Attrs,
+                CHILDREN => Role::Children,
+                ATTRS => Role::Attrs,
                 _ => Role::Named,
             };
 
@@ -487,7 +487,9 @@ fn component_docs(pascal: &str, func: &ItemFn) -> Vec<String> {
 
     if props.iter().any(|prop| prop.maybe) {
         lines.push(String::new());
-        lines.push(" Optional props also have a `maybe_` setter that takes an `Option`. In `html!`, write `prop = [value]`.".to_string());
+        lines.push(format!(
+            " Optional props also have a `{MAYBE_PREFIX}` setter that takes an `Option`. In `html!`, write `prop = [value]`."
+        ));
     }
 
     lines

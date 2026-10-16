@@ -1,77 +1,13 @@
-use heck::ToKebabCase;
 use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, TokenStream, TokenTree};
 use proc_macro2_diagnostics::{Diagnostic, SpanDiagnosticExt};
-use syn::{
-    Expr, ExprPath, LitStr, Path, Token,
-    ext::IdentExt,
-    parse::{Parse, ParseStream},
-    spanned::Spanned,
-    token::Paren,
-    visit_mut::VisitMut,
+use syn::{Expr, ExprPath, Path, spanned::Spanned, token::Paren, visit_mut::VisitMut};
+
+use crate::{
+    ast::*,
+    conventions::{BQ_SETUP, HTML_MACROS, is_html_macro},
 };
 
-use crate::ast::*;
-
 const MARKER: &str = "bq_setup";
-
-#[derive(Default)]
-pub struct ComponentOptions {
-    pub eager: Option<Ident>,
-    pub setup: Option<LitStr>,
-}
-
-impl Parse for ComponentOptions {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut options = Self::default();
-        while !input.is_empty() {
-            let key = input.call(Ident::parse_any)?;
-            if key == "eager" {
-                if options.eager.is_some() {
-                    return Err(syn::Error::new(key.span(), "`eager` is given two times"));
-                }
-                options.eager = Some(key);
-            } else if key == "setup" {
-                if options.setup.is_some() {
-                    return Err(syn::Error::new(key.span(), "`setup` is given two times"));
-                }
-                input.parse::<Token![=]>()?;
-                let name: LitStr = input.parse()?;
-                if !kebab(&name.value()) {
-                    let message = format!(
-                        "{:?} is not a valid setup name; use lowercase kebab-case, for example \"editor-toolbar\"",
-                        name.value()
-                    );
-                    return Err(syn::Error::new(name.span(), message));
-                }
-                options.setup = Some(name);
-            } else {
-                return Err(syn::Error::new(key.span(), "expected `eager` or `setup = \"…\"`"));
-            }
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-        Ok(options)
-    }
-}
-
-impl ComponentOptions {
-    pub fn name(&self, function: &Ident) -> String {
-        match &self.setup {
-            Some(name) => name.value(),
-            None => function.unraw().to_string().to_kebab_case(),
-        }
-    }
-}
-
-pub fn kebab(text: &str) -> bool {
-    text.chars().next().is_some_and(|first| first.is_ascii_lowercase())
-        && !text.ends_with('-')
-        && !text.contains("--")
-        && text
-            .chars()
-            .all(|character| character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-')
-}
 
 pub fn mark(block: &mut syn::Block, setup: &Ident) -> bool {
     let mut marker = Marker { setup, found: false };
@@ -89,7 +25,7 @@ impl VisitMut for Marker<'_> {
 
     fn visit_macro_mut(&mut self, mac: &mut syn::Macro) {
         let tokens = std::mem::take(&mut mac.tokens);
-        let html = mac.path.segments.last().is_some_and(|segment| segment.ident == "html");
+        let html = is_html_macro(&mac.path);
         mac.tokens = if html { self.html(tokens) } else { self.tokens(tokens) };
     }
 }
@@ -102,7 +38,7 @@ impl Marker<'_> {
                 TokenTree::Group(group) => {
                     let html = matches!(
                         out.as_slice(),
-                        [.., TokenTree::Ident(name), TokenTree::Punct(bang)] if name == "html" && bang.as_char() == '!'
+                        [.., TokenTree::Ident(name), TokenTree::Punct(bang)] if HTML_MACROS.iter().any(|html| name == html) && bang.as_char() == '!'
                     );
                     let stream = if html {
                         self.html(group.stream())
@@ -227,7 +163,7 @@ fn bare_if(if_: &mut IfExpr<Element>, setup: Option<&Path>, diagnostics: &mut Ve
 fn bare_attrs(attrs: &mut [Attribute], setup: Option<&Path>, diagnostics: &mut Vec<Diagnostic>) {
     for attr in attrs {
         let Attribute::Named { name, attr_type } = attr else { continue };
-        if !matches!(attr_type, AttributeType::Empty(None)) || name.to_string() != "bq-setup" {
+        if !matches!(attr_type, AttributeType::Empty(None)) || name.to_string() != BQ_SETUP {
             continue;
         }
         let span = name.span();

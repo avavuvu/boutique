@@ -1,6 +1,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 pub mod ast;
+pub mod conventions;
 mod escape;
 mod generate;
 pub mod setup;

@@ -728,7 +728,7 @@ impl DiagnosticParse for HtmlName {
 
 fn is_event_name(name: &Punctuated<HtmlNameFragment, HtmlNamePunct>) -> bool {
     let text = HtmlName { name: name.clone() }.to_string();
-    text.strip_prefix("bq-on:").is_some_and(|event| !event.is_empty())
+    text.strip_prefix(crate::conventions::BQ_ON).is_some_and(|event| !event.is_empty())
 }
 
 impl Parse for HtmlName {

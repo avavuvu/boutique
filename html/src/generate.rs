@@ -2,7 +2,11 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{Expr, Local, Path, ext::IdentExt, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Brace, token::Comma};
 
-use crate::{ast::*, escape};
+use crate::{
+    ast::*,
+    conventions::{ATTRS, BQ_SETUP, CHILDREN, FINISH_FN, maybe_setter, merges},
+    escape,
+};
 
 pub fn generate(markups: Markups<Element>, output_ident: Ident, crate_path: TokenStream) -> TokenStream {
     let mut build = Builder::new(output_ident.clone());
@@ -139,7 +143,7 @@ impl Generator {
                     value,
                     ..
                 } => {
-                    let setter = Ident::new(&format!("maybe_{}", name.unraw()), name.span());
+                    let setter = Ident::new(&maybe_setter(&name.unraw().to_string()), name.span());
                     named.push(quote!(.#setter(#value)));
                 }
             }
@@ -150,7 +154,7 @@ impl Generator {
             (TokenStream::new(), TokenStream::new())
         } else {
             let stmts = self.build_attrs(&attrs_ident, attrs);
-            let attrs_method = Ident::new("attrs", span);
+            let attrs_method = Ident::new(ATTRS, span);
             (stmts, quote!(.#attrs_method(#attrs_ident)))
         };
 
@@ -161,7 +165,7 @@ impl Generator {
                 let mut inner = Builder::new(children.clone());
                 Generator::new(children.clone(), crate_path.clone()).markups(block.markups, &mut inner);
                 let inner = inner.finish();
-                let children_method = Ident::new("children", span);
+                let children_method = Ident::new(CHILDREN, span);
                 quote! {
                     .#children_method({
                         let mut #children = alloc::string::String::new();
@@ -172,7 +176,7 @@ impl Generator {
             }
         };
 
-        let build_method = Ident::new("build", span);
+        let build_method = Ident::new(FINISH_FN, span);
         build.push_tokens(quote! {{
             #attrs_stmts
             #crate_path::maud::macro_private::render_to!(
@@ -481,10 +485,6 @@ impl Generator {
 
 ////////////////////////////////////////////////////////
 
-fn merges(name: &str) -> bool {
-    name == "bq-setup" || name == "bq-ref" || name.starts_with("bq-on:")
-}
-
 fn needs_attrs(attrs: &[Attribute]) -> bool {
     let mut names = Vec::new();
     let mut dotted = false;
@@ -506,7 +506,7 @@ fn setup_attrs(attrs: &mut [Attribute], crate_path: &TokenStream) {
             name,
             attr_type: AttributeType::Normal { value, .. },
         } = attr
-            && name.to_string() == "bq-setup"
+            && name.to_string() == BQ_SETUP
         {
             setup_value(value, crate_path);
         }

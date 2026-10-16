@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use bq_html::{
     ast::{Element, Markups},
-    setup::{ComponentOptions, mark},
+    conventions::ComponentOptions,
+    setup::mark,
 };
 use heck::ToUpperCamelCase;
 use proc_macro2::{Ident, Span};
