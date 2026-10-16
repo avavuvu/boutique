@@ -4,21 +4,21 @@ use proc_macro2::TokenStream;
 use proc_macro2_diagnostics::{Diagnostic, SpanDiagnosticExt};
 use quote::ToTokens;
 use syn::{
-    Error, Expr, Ident, Lit, LitBool, LitInt, LitStr, Local, Pat, Path, Stmt, braced, bracketed,
+    Error, Expr, Ident, Lit, LitBool, LitInt, LitStr, Local, Pat, Stmt, braced, bracketed,
     ext::IdentExt,
     parenthesized,
     parse::{Lookahead1, Parse, ParseStream},
     punctuated::{Pair, Punctuated},
     spanned::Spanned,
     token::{
-        At, Brace, Bracket, Colon, Comma, Dot, DotDot, Else, Eq, EqEq, FatArrow, For, If, In, Let, Match, Minus, Or, OrOr, Paren, Pound,
-        Question, Semi, Slash, While,
+        At, Brace, Bracket, Colon, Comma, Dot, DotDot, Else, Eq, FatArrow, For, If, In, Let, Match, Minus, Or, Paren, Pound, Question,
+        Semi, Slash, While,
     },
 };
 
-pub mod kw {
-    syn::custom_keyword!(element);
-}
+mod ext;
+
+pub use ext::{ComponentArg, ElementName, kw};
 
 #[derive(Debug, Clone)]
 pub struct Markups<E> {
@@ -73,9 +73,7 @@ impl<E: MaybeElement> Markup<E> {
         } else if lookahead.peek(Paren) {
             let content;
             let paren_token = parenthesized!(content in input);
-            if content.peek(DotDot) {
-                return Err(Error::new(paren_token.span.join(), "`(..attrs)` must come after an element"));
-            }
+            ext::reject_spread(paren_token, &content)?;
             Ok(Self::Splice {
                 paren_token,
                 expr: content.parse()?,
@@ -187,174 +185,6 @@ impl MaybeElement for Element {
 
     fn should_parse_dynamic() -> Option<DiagnosticParseFn<Self>> {
         Some(Element::diagnostic_parse)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ElementName {
-    Static(HtmlName),
-    Dynamic {
-        at_token: At,
-        element_token: kw::element,
-        paren_token: Paren,
-        expr: Box<Expr>,
-    },
-    Component {
-        path: Path,
-        paren_token: Option<Paren>,
-        args: Punctuated<ComponentArg, Comma>,
-    },
-}
-
-fn peek_spread(input: ParseStream) -> bool {
-    let Some((inside, _, _)) = input.cursor().group(proc_macro2::Delimiter::Parenthesis) else {
-        return false;
-    };
-    let Some((first, next)) = inside.punct() else {
-        return false;
-    };
-    first.as_char() == '.'
-        && first.spacing() == proc_macro2::Spacing::Joint
-        && next.punct().is_some_and(|(second, _)| second.as_char() == '.')
-}
-
-fn peek_component(input: ParseStream) -> bool {
-    let fork = input.fork();
-    let Ok(path) = fork.call(Path::parse_mod_style) else {
-        return false;
-    };
-    let capitalised = path
-        .segments
-        .last()
-        .and_then(|segment| segment.ident.unraw().to_string().chars().next())
-        .is_some_and(|first| first.is_ascii_uppercase());
-    capitalised && !fork.peek(Minus) && !fork.peek(Colon)
-}
-
-impl DiagnosticParse for ElementName {
-    fn diagnostic_parse(input: ParseStream, diagnostics: &mut Vec<Diagnostic>) -> syn::Result<Self> {
-        if input.peek(At) {
-            let content;
-            Ok(Self::Dynamic {
-                at_token: input.parse()?,
-                element_token: input.parse()?,
-                paren_token: parenthesized!(content in input),
-                expr: content.parse()?,
-            })
-        } else if peek_component(input) {
-            let path = input.call(Path::parse_mod_style)?;
-            if !input.peek(Paren) || peek_spread(input) {
-                return Ok(Self::Component {
-                    path,
-                    paren_token: None,
-                    args: Punctuated::new(),
-                });
-            }
-            let content;
-            let paren_token = parenthesized!(content in input);
-            let args = Punctuated::<ComponentArg, Comma>::parse_terminated(&content)?;
-            let mut named = None;
-            for arg in &args {
-                match arg {
-                    ComponentArg::Named { name, .. } => named = Some(name),
-                    ComponentArg::Positional(expr) => {
-                        if let Some(name) = named {
-                            return Err(Error::new_spanned(
-                                expr,
-                                format!("positional arguments must come before named arguments like `{name} = ..`"),
-                            ));
-                        }
-                    }
-                }
-            }
-            Ok(Self::Component {
-                path,
-                paren_token: Some(paren_token),
-                args,
-            })
-        } else {
-            input.diagnostic_parse(diagnostics).map(Self::Static)
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ComponentArg {
-    Positional(Expr),
-    Named {
-        name: Ident,
-        eq_token: Eq,
-        maybe: Option<Bracket>,
-        value: Expr,
-    },
-}
-
-impl Parse for ComponentArg {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let named = input.peek(Ident) && input.peek2(Eq) && !input.peek2(EqEq) && !input.peek2(FatArrow);
-        if named {
-            let name = input.parse()?;
-            let eq_token = input.parse()?;
-            let (maybe, value) = match input.parse()? {
-                Expr::Array(array) if array.elems.len() == 1 && !array.elems.trailing_punct() => {
-                    (Some(array.bracket_token), array.elems.into_iter().next().unwrap())
-                }
-                value => (None, value),
-            };
-            Ok(Self::Named {
-                name,
-                eq_token,
-                maybe,
-                value,
-            })
-        } else {
-            input.parse().map(Self::Positional)
-        }
-    }
-}
-
-impl ToTokens for ComponentArg {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        match self {
-            Self::Positional(expr) => expr.to_tokens(tokens),
-            Self::Named {
-                name,
-                eq_token,
-                maybe,
-                value,
-            } => {
-                name.to_tokens(tokens);
-                eq_token.to_tokens(tokens);
-                match maybe {
-                    Some(bracket_token) => bracket_token.surround(tokens, |tokens| value.to_tokens(tokens)),
-                    None => value.to_tokens(tokens),
-                }
-            }
-        }
-    }
-}
-
-impl ToTokens for ElementName {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        match self {
-            Self::Static(name) => name.to_tokens(tokens),
-            Self::Dynamic {
-                at_token,
-                element_token,
-                paren_token,
-                expr,
-            } => {
-                at_token.to_tokens(tokens);
-                element_token.to_tokens(tokens);
-                paren_token.surround(tokens, |tokens| expr.to_tokens(tokens));
-            }
-            Self::Component { path, paren_token, args } => {
-                path.to_tokens(tokens);
-                if let Some(paren_token) = paren_token {
-                    paren_token.surround(tokens, |tokens| args.to_tokens(tokens));
-                }
-            }
-        }
     }
 }
 
@@ -527,19 +357,7 @@ impl DiagnosticParse for Attribute {
                 name: input.diagnostic_parse(diagnostics)?,
             })
         } else if lookahead.peek(Paren) {
-            let content;
-            let paren_token = parenthesized!(content in input);
-            if !content.peek(DotDot) {
-                return Err(Error::new(
-                    paren_token.span.join(),
-                    "expected `..` before the attributes to spread, for example `(..attrs)`",
-                ));
-            }
-            Ok(Self::Spread {
-                paren_token,
-                dot2_token: content.parse()?,
-                expr: content.parse()?,
-            })
+            ext::parse_spread(input)
         } else {
             let name = input.diagnostic_parse::<HtmlName>(diagnostics)?;
 
@@ -590,10 +408,7 @@ impl ToTokens for Attribute {
                 paren_token,
                 dot2_token,
                 expr,
-            } => paren_token.surround(tokens, |tokens| {
-                dot2_token.to_tokens(tokens);
-                expr.to_tokens(tokens);
-            }),
+            } => ext::spread_to_tokens(paren_token, dot2_token, expr, tokens),
         }
     }
 }
@@ -705,28 +520,23 @@ impl DiagnosticParse for HtmlName {
                 loop {
                     punctuated.push_value(input.diagnostic_parse(diagnostics)?);
 
-                    if input.peek(Minus) || input.peek(Colon) {
-                        let punct = input.diagnostic_parse(diagnostics)?;
-                        punctuated.push_punct(punct);
-                    } else if input.peek(Or) && is_event_name(&punctuated) {
-                        if input.peek(OrOr) {
-                            return Err(input.error("write one `|` between modifiers, for example `bq-on:click|prevent`"));
-                        }
-                        punctuated.push_punct(HtmlNamePunct::Pipe(input.parse()?));
-                    } else {
+                    if let Some(pipe) = ext::parse_modifier_pipe(input, &punctuated)? {
+                        punctuated.push_punct(pipe);
+                        continue;
+                    }
+
+                    if !(input.peek(Minus) || input.peek(Colon)) {
                         break;
                     }
+
+                    let punct = input.diagnostic_parse(diagnostics)?;
+                    punctuated.push_punct(punct);
                 }
 
                 punctuated
             },
         })
     }
-}
-
-fn is_event_name(name: &Punctuated<HtmlNameFragment, HtmlNamePunct>) -> bool {
-    let text = HtmlName { name: name.clone() }.to_string();
-    text.strip_prefix(crate::conventions::BQ_ON).is_some_and(|event| !event.is_empty())
 }
 
 impl Parse for HtmlName {

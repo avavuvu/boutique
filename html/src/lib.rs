@@ -1,3 +1,4 @@
+#![doc = "Fork of [`maud_macros` 0.27.0](https://github.com/lambda-fairy/maud/tree/v0.27.0/maud_macros). `ast.rs`, `generate.rs`, `escape.rs` and `lib.rs` are the upstream files with small hooks; boutique's additions live in `ast/ext.rs`, `generate/ext.rs`, `setup.rs` and `conventions.rs`."]
 #![allow(clippy::needless_pass_by_value)]
 
 #[doc(hidden)]
