@@ -9,6 +9,7 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
+    visit_mut::VisitMut,
 };
 
 struct AttributePair {
@@ -133,30 +134,18 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
         quote!(#[allow(unused_imports)] #visibility use #fn_name as #alias;)
     });
 
-    let elided = count_elided_lifetimes(&func);
-    let named: Vec<&GenericParam> = func.sig.generics.params.iter().collect();
-
-    let generated: Vec<Lifetime> = (0..elided)
-        .map(|index| Lifetime::new(&format!("'__l{index}"), proc_macro2::Span::call_site()))
-        .collect();
-
-    let named_args = named.iter().map(|param| match param {
-        GenericParam::Lifetime(lt) => {
-            let lt = &lt.lifetime;
-            quote! { #lt }
-        }
-        GenericParam::Type(ty) => {
-            let ident = &ty.ident;
-            quote! { #ident }
-        }
-        GenericParam::Const(c) => {
-            let ident = &c.ident;
-            quote! { #ident }
-        }
-    });
-
-    let lifetimes_named = named.iter().filter(|p| matches!(p, GenericParam::Lifetime(_)));
-    let others_named = named.iter().filter(|p| !matches!(p, GenericParam::Lifetime(_)));
+    name_elided_lifetimes(&mut func.sig);
+    let mut generics = func.sig.generics.clone();
+    generics.params.push(syn::parse_quote!(__S: #state_mod::IsComplete));
+    let type_generics = {
+        let (_, type_generics, _) = generics.split_for_impl();
+        quote!(#type_generics)
+    };
+    generics
+        .make_where_clause()
+        .predicates
+        .push(syn::parse_quote!(#builder #type_generics: ::core::clone::Clone));
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     let expanded = quote! {
         #[#crate_path::bon::builder(
@@ -170,9 +159,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #alias
 
-        impl<#(#lifetimes_named,)* #(#generated,)* #(#others_named,)* __S: #state_mod::IsComplete>
-            #crate_path::maud::Render for #builder<#(#named_args,)* #(#generated,)* __S>
-        {
+        impl #impl_generics #crate_path::maud::Render for #builder #type_generics #where_clause {
             fn render(&self) -> #crate_path::maud::Markup {
                 ::core::clone::Clone::clone(self).build()
             }
@@ -506,27 +493,45 @@ fn component_docs(pascal: &str, func: &ItemFn) -> Vec<String> {
     lines
 }
 
-fn count_elided_lifetimes(func: &ItemFn) -> usize {
-    struct Counter(usize);
+fn name_elided_lifetimes(sig: &mut syn::Signature) {
+    struct Namer(Vec<Lifetime>);
 
-    impl<'ast> syn::visit::Visit<'ast> for Counter {
-        fn visit_type_reference(&mut self, reference: &'ast syn::TypeReference) {
-            if reference.lifetime.is_none() {
-                self.0 += 1;
-            }
-            syn::visit::visit_type_reference(self, reference);
+    impl Namer {
+        fn next(&mut self) -> Lifetime {
+            let lifetime = Lifetime::new(&format!("'__l{}", self.0.len()), proc_macro2::Span::call_site());
+            self.0.push(lifetime.clone());
+            lifetime
         }
+    }
 
-        fn visit_lifetime(&mut self, lifetime: &'ast Lifetime) {
+    impl VisitMut for Namer {
+        fn visit_item_mut(&mut self, _: &mut syn::Item) {}
+
+        fn visit_type_bare_fn_mut(&mut self, _: &mut syn::TypeBareFn) {}
+
+        fn visit_parenthesized_generic_arguments_mut(&mut self, _: &mut syn::ParenthesizedGenericArguments) {}
+
+        fn visit_lifetime_mut(&mut self, lifetime: &mut Lifetime) {
             if lifetime.ident == "_" {
-                self.0 += 1;
+                *lifetime = self.next();
+            }
+        }
+
+        fn visit_type_reference_mut(&mut self, reference: &mut syn::TypeReference) {
+            syn::visit_mut::visit_type_reference_mut(self, reference);
+            if reference.lifetime.is_none() {
+                reference.lifetime = Some(self.next());
             }
         }
     }
 
-    let mut counter = Counter(0);
-    for input in &func.sig.inputs {
-        syn::visit::Visit::visit_fn_arg(&mut counter, input);
+    let mut namer = Namer(Vec::new());
+    for input in &mut sig.inputs {
+        namer.visit_fn_arg_mut(input);
     }
-    counter.0
+    for (index, lifetime) in namer.0.into_iter().enumerate() {
+        sig.generics
+            .params
+            .insert(index, GenericParam::Lifetime(syn::LifetimeParam::new(lifetime)));
+    }
 }
