@@ -4,10 +4,13 @@ use axum::{
 };
 use maud::Markup;
 
-use crate::html;
+use crate::{
+    headers::{HX_REDIRECT, HX_REQUEST},
+    html,
+};
 
 pub fn is_htmx(headers: &HeaderMap) -> bool {
-    headers.contains_key("hx-request")
+    headers.contains_key(HX_REQUEST)
 }
 
 pub fn redirect(path: &str) -> Response {
@@ -15,7 +18,7 @@ pub fn redirect(path: &str) -> Response {
         tracing::error!(path, %error, "invalid HX-Redirect path, redirecting to /");
         HeaderValue::from_static("/")
     });
-    (StatusCode::OK, [("HX-Redirect", location)]).into_response()
+    (StatusCode::OK, [(HX_REDIRECT, location)]).into_response()
 }
 
 pub fn partial(target: &str, content: Markup) -> Markup {

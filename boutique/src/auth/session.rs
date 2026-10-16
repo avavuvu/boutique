@@ -1,6 +1,5 @@
 use std::{error::Error, fmt, time::Duration};
 
-use argon2::password_hash::rand_core::{OsRng, RngCore};
 use axum::response::{IntoResponseParts, ResponseParts};
 pub use axum_extra::extract::cookie::CookieJar;
 use chrono::Utc;
@@ -10,7 +9,7 @@ use super::{
     AuthState, cookies, expiry, password,
     store::{AuthStore, AuthUser, NewSession, StoreError},
 };
-use crate::error::AppError;
+use crate::{error::AppError, ids};
 
 #[derive(Debug)]
 pub enum LoginError {
@@ -79,7 +78,7 @@ pub async fn authenticate<U: AuthUser>(state: &AuthState<U>, email: &str, plain_
 
 pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Session, StoreError> {
     let now = Utc::now();
-    let token = new_token();
+    let token = ids::random_hex(32);
     let ttl = state.config.session_ttl;
     let session = NewSession {
         token_hash: token_hash(&token),
@@ -100,7 +99,9 @@ pub async fn issue<U: AuthUser>(state: &AuthState<U>, user: &U) -> Result<Sessio
 pub async fn revoke<U: AuthUser>(state: &AuthState<U>, jar: CookieJar) -> Session {
     if let Some(cookie) = jar.get(cookies::SESSION) {
         let token_hash = token_hash(cookie.value());
-        let _ = state.store.delete_session(&token_hash).await;
+        if let Err(error) = state.store.delete_session(&token_hash).await {
+            tracing::warn!(?error, "failed to delete the session on logout");
+        }
     }
 
     Session(jar.remove(cookies::remove(cookies::SESSION, &state.config)))
@@ -121,12 +122,6 @@ pub fn spawn_cleanup<U: AuthUser>(state: AuthState<U>, interval: Duration) -> to
             }
         }
     })
-}
-
-fn new_token() -> String {
-    let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 pub(crate) fn token_hash(token: &str) -> String {

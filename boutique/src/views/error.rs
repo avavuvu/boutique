@@ -3,14 +3,13 @@ use maud::Markup;
 
 use crate::{
     error::ErrorReport,
+    headers::header_str,
     html,
     views::{Head, base},
 };
 
 pub fn back_url(headers: &HeaderMap) -> &str {
-    headers
-        .get(header::REFERER)
-        .and_then(|value| value.to_str().ok())
+    header_str(headers, header::REFERER)
         .filter(|value| !value.is_empty())
         .unwrap_or("/")
 }

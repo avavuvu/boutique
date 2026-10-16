@@ -9,7 +9,7 @@ use super::{
     password::{self, HashError},
     store::{AuthStore, AuthUser, StoreError},
 };
-use crate::error::AppError;
+use crate::{error::AppError, hex};
 
 const TOKEN_TYPE: &str = "password_reset";
 
@@ -68,20 +68,6 @@ fn mac(secret: &[u8], user_id: &str, expires: i64, password_hash: &str) -> Hmac<
     mac
 }
 
-fn encode_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn decode_hex(hex: &str) -> Option<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
-        .collect()
-}
-
 /// returns `None` for an unknown email. callers must show the same message
 /// either way so the endpoint does not reveal which emails have accounts.
 pub async fn request<U: AuthUser>(state: &AuthState<U>, email: &str) -> Result<Option<(U, String)>, ResetError> {
@@ -98,7 +84,7 @@ pub fn token_for<U: AuthUser>(state: &AuthState<U>, user: &U) -> String {
     let signature = mac(state.secret(), user.id(), expires, user.password_hash())
         .finalize()
         .into_bytes();
-    format!("{}.{expires}.{}", encode_hex(user.id().as_bytes()), encode_hex(&signature))
+    format!("{}.{expires}.{}", hex::encode(user.id().as_bytes()), hex::encode(&signature))
 }
 
 pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Result<U, ResetError> {
@@ -107,11 +93,11 @@ pub async fn verify_token<U: AuthUser>(state: &AuthState<U>, token: &str) -> Res
         return Err(ResetError::InvalidToken);
     };
 
-    let user_id = decode_hex(user_id)
+    let user_id = hex::decode(user_id)
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .ok_or(ResetError::InvalidToken)?;
     let expires: i64 = expires.parse().map_err(|_| ResetError::InvalidToken)?;
-    let signature = decode_hex(signature).ok_or(ResetError::InvalidToken)?;
+    let signature = hex::decode(signature).ok_or(ResetError::InvalidToken)?;
 
     if expires <= Utc::now().timestamp() {
         return Err(ResetError::InvalidToken);
@@ -254,7 +240,7 @@ mod tests {
         let state = state();
         let token = token_for(&state, &user("alice"));
         let (_, rest) = token.split_once('.').unwrap();
-        let token = format!("{}.{rest}", encode_hex(b"bob"));
+        let token = format!("{}.{rest}", hex::encode(b"bob"));
         assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
     }
 

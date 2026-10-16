@@ -1,13 +1,14 @@
 use axum::{
     body::{Body, HttpBody, to_bytes},
     handler::Handler,
-    http::{HeaderMap, Request, StatusCode, header},
+    http::{HeaderMap, Request, StatusCode, header, response::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 
 use crate::{
     error::{ErrorMessage, ErrorReport},
+    headers::header_str,
     htmx, views,
 };
 
@@ -23,34 +24,51 @@ where
         return next.run(request).await;
     }
 
-    let mut page_request = Request::new(Body::empty());
-    *page_request.method_mut() = request.method().clone();
-    *page_request.uri_mut() = request.uri().clone();
-    *page_request.version_mut() = request.version();
-    *page_request.headers_mut() = request.headers().clone();
-
+    let page_request = copy_head(&request);
     let response = next.run(request).await;
-    let status = response.status();
-    if !is_error(status) {
+    if !is_error(response.status()) {
         return response;
     }
 
-    let (mut parts, body) = response.into_parts();
+    let (parts, body) = response.into_parts();
     let report = match parts.extensions.get::<ErrorReport>() {
         Some(report) => report.clone(),
         None if is_html(&parts.headers) => return Response::from_parts(parts, body),
-        None => plain_report(status, &parts.headers, body).await,
+        None => plain_report(parts.status, &parts.headers, body).await,
     };
-    let headers = page_request.headers().clone();
-    let uri = page_request.uri().clone();
-    page_request.extensions_mut().insert(report.clone());
 
-    let mut page = render.call(page_request, state).await;
-    if is_error(page.status()) {
-        tracing::warn!(%uri, %status, page_status = %page.status(), "error page handler failed, using the default error page");
-        page = views::error_page(headers, report).await.into_response();
+    let page = render_page(render, state, page_request, report).await;
+    replace_body(parts, page)
+}
+
+fn copy_head(request: &Request<Body>) -> Request<Body> {
+    let mut copy = Request::new(Body::empty());
+    *copy.method_mut() = request.method().clone();
+    *copy.uri_mut() = request.uri().clone();
+    *copy.version_mut() = request.version();
+    *copy.headers_mut() = request.headers().clone();
+    copy
+}
+
+async fn render_page<H, T, S>(render: H, state: S, mut request: Request<Body>, report: ErrorReport) -> Response
+where
+    H: Handler<T, S>,
+    T: 'static,
+    S: Clone + Send + Sync + 'static,
+{
+    let headers = request.headers().clone();
+    let uri = request.uri().clone();
+    request.extensions_mut().insert(report.clone());
+
+    let page = render.call(request, state).await;
+    if !is_error(page.status()) {
+        return page;
     }
+    tracing::warn!(%uri, status = %report.status, page_status = %page.status(), "error page handler failed, using the default error page");
+    views::error_page(headers, report).await.into_response()
+}
 
+fn replace_body(mut parts: Parts, page: Response) -> Response {
     let (page, body) = page.into_parts();
     parts.headers.remove(header::CONTENT_TYPE);
     parts.headers.remove(header::CONTENT_LENGTH);
@@ -78,23 +96,13 @@ fn is_error(status: StatusCode) -> bool {
 }
 
 fn wants_page(headers: &HeaderMap) -> bool {
-    !htmx::is_htmx(headers)
-        && headers
-            .get(header::ACCEPT)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| value.contains("text/html"))
+    !htmx::is_htmx(headers) && header_str(headers, header::ACCEPT).is_some_and(|value| value.contains("text/html"))
 }
 
 fn is_html(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("text/html"))
+    header_str(headers, header::CONTENT_TYPE).is_some_and(|value| value.starts_with("text/html"))
 }
 
 fn is_plain_text(headers: &HeaderMap) -> bool {
-    headers
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.starts_with("text/plain"))
+    header_str(headers, header::CONTENT_TYPE).is_some_and(|value| value.starts_with("text/plain"))
 }

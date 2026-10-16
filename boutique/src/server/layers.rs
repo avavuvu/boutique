@@ -1,3 +1,4 @@
+use crate::headers::{SEC_FETCH_SITE, X_FORWARDED_PROTO, header_str};
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
@@ -30,7 +31,7 @@ fn is_cross_origin<B>(request: &Request<B>) -> bool {
         return false;
     }
     let headers = request.headers();
-    if let Some(site) = headers.get("sec-fetch-site") {
+    if let Some(site) = headers.get(SEC_FETCH_SITE) {
         return !matches!(site.as_bytes(), b"same-origin" | b"none");
     }
     let Some(origin) = headers.get(header::ORIGIN) else {
@@ -41,22 +42,16 @@ fn is_cross_origin<B>(request: &Request<B>) -> bool {
         .ok()
         .and_then(|origin| origin.split_once("://"))
         .map(|(_, authority)| authority);
-    authority.is_none() || authority != headers.get(header::HOST).and_then(|host| host.to_str().ok())
+    authority.is_none() || authority != header_str(headers, header::HOST)
 }
 
-pub(crate) async fn https_redirect(req: Request<Body>, next: Next) -> Response {
-    let is_http = req
-        .headers()
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v == "http")
-        .unwrap_or(false);
-
-    if is_http {
-        let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
-        let path = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
+pub(crate) async fn https_redirect(request: Request<Body>, next: Next) -> Response {
+    let headers = request.headers();
+    if header_str(headers, X_FORWARDED_PROTO) == Some("http") {
+        let host = header_str(headers, header::HOST).unwrap_or("");
+        let path = request.uri().path_and_query().map_or("/", |path| path.as_str());
         return Redirect::permanent(&format!("https://{host}{path}")).into_response();
     }
 
-    next.run(req).await
+    next.run(request).await
 }

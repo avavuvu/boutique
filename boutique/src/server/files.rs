@@ -1,6 +1,7 @@
 use std::{convert::Infallible, time::Duration};
 
 use axum::{
+    Router,
     extract::{Request, State},
     http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
@@ -8,6 +9,7 @@ use axum::{
 };
 use percent_encoding::percent_decode_str;
 use tower::{Service, ServiceBuilder};
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Cache {
@@ -27,15 +29,48 @@ impl Cache {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum MountKind {
+    File,
+    Dir,
+    Build,
+}
+
+pub(super) struct Mount {
+    pub(super) route: String,
+    pub(super) path: String,
+    cache: Cache,
+    kind: MountKind,
+}
+
+impl Mount {
+    pub(super) fn new(route: impl Into<String>, path: impl Into<String>, cache: Cache, kind: MountKind) -> Self {
+        Self {
+            route: route.into(),
+            path: path.into(),
+            cache,
+            kind,
+        }
+    }
+
+    pub(super) fn add_to(&self, router: Router, debug: bool) -> Router {
+        let policy = FilePolicy::new(self.cache, debug, matches!(self.kind, MountKind::Build));
+        match self.kind {
+            MountKind::File => router.route_service(&self.route, files_service(policy, ServeFile::new(&self.path))),
+            MountKind::Dir | MountKind::Build => router.nest_service(&self.route, files_service(policy, ServeDir::new(&self.path))),
+        }
+    }
+}
+
 #[derive(Clone)]
-pub(super) struct FilePolicy {
+struct FilePolicy {
     cache_control: HeaderValue,
     debug: bool,
     hide_dotfiles: bool,
 }
 
 impl FilePolicy {
-    pub(super) fn new(cache: Cache, debug: bool, hide_dotfiles: bool) -> Self {
+    fn new(cache: Cache, debug: bool, hide_dotfiles: bool) -> Self {
         let cache_control = if debug {
             HeaderValue::from_static("no-store")
         } else {
@@ -49,7 +84,7 @@ impl FilePolicy {
     }
 }
 
-pub(super) fn files_service<S>(
+fn files_service<S>(
     policy: FilePolicy,
     service: S,
 ) -> impl Service<Request, Response = Response, Error = Infallible, Future: Send> + Clone + Send + Sync + 'static

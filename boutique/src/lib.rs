@@ -1,5 +1,7 @@
 mod auth;
 mod error;
+mod headers;
+mod hex;
 mod server;
 
 #[cfg(feature = "cloudinary")]

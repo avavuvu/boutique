@@ -15,25 +15,21 @@ use axum::{
 };
 use tokio::net::{TcpListener, ToSocketAddrs};
 use tower::Service;
-use tower_http::{
-    services::{ServeDir, ServeFile},
-    trace::TraceLayer,
-};
+use tower_http::trace::TraceLayer;
 
 pub use assets::ManifestError;
 pub(crate) use assets::{HTMX_PATH, entry as manifest_entry};
 pub use dev::run;
 pub use files::Cache;
-use files::{FilePolicy, files_service};
+use files::{Mount, MountKind};
 use layers::{compression, cross_origin_protection, https_redirect};
 
 type Wrap = Box<dyn FnOnce(Router) -> Router + Send + Sync>;
 
 #[must_use]
 pub struct Server {
-    assets: (String, String),
-    static_dirs: Vec<(String, String, Cache)>,
-    files: Vec<(String, String, Cache)>,
+    build: Mount,
+    mounts: Vec<Mount>,
     error_page: Option<Wrap>,
     debug: bool,
 }
@@ -41,9 +37,8 @@ pub struct Server {
 impl Default for Server {
     fn default() -> Self {
         Self {
-            assets: (assets::BUILD_ROUTE.into(), assets::BUILD_DIR.into()),
-            static_dirs: Vec::new(),
-            files: Vec::new(),
+            build: Mount::new(assets::BUILD_ROUTE, assets::BUILD_DIR, Cache::Immutable, MountKind::Build),
+            mounts: Vec::new(),
             error_page: None,
             debug: false,
         }
@@ -56,7 +51,7 @@ impl Server {
     }
 
     pub fn assets(mut self, route: impl Into<String>, dir: impl Into<String>) -> Self {
-        self.assets = (route.into(), dir.into());
+        self.build = Mount::new(route, dir, Cache::Immutable, MountKind::Build);
         self
     }
 
@@ -65,7 +60,7 @@ impl Server {
     }
 
     pub fn static_dir_with_cache(mut self, route: impl Into<String>, dir: impl Into<String>, cache: Cache) -> Self {
-        self.static_dirs.push((route.into(), dir.into(), cache));
+        self.mounts.push(Mount::new(route, dir, cache, MountKind::Dir));
         self
     }
 
@@ -74,7 +69,7 @@ impl Server {
     }
 
     pub fn file_with_cache(mut self, route: impl Into<String>, path: impl Into<String>, cache: Cache) -> Self {
-        self.files.push((route.into(), path.into(), cache));
+        self.mounts.push(Mount::new(route, path, cache, MountKind::File));
         self
     }
 
@@ -111,23 +106,15 @@ impl Server {
         F: Service<Request, Response = Response, Error = Infallible> + Clone + Send + Sync + 'static,
         F::Future: Send + 'static,
     {
-        assets::init(&self.assets.0, &self.assets.1, self.debug)?;
+        assets::init(&self.build.route, &self.build.path, self.debug)?;
 
-        let mut router = Router::new().merge(assets::router());
-
-        for (route, path, cache) in &self.files {
-            let policy = FilePolicy::new(*cache, self.debug, false);
-            router = router.route_service(route, files_service(policy, ServeFile::new(path)));
-        }
-
-        for (route, dir, cache) in &self.static_dirs {
-            let policy = FilePolicy::new(*cache, self.debug, false);
-            router = router.nest_service(route, files_service(policy, ServeDir::new(dir)));
-        }
-
-        let (route, dir) = &self.assets;
-        let policy = FilePolicy::new(Cache::Immutable, self.debug, true);
-        router = router.nest_service(route, files_service(policy, ServeDir::new(dir)));
+        let router = self
+            .mounts
+            .iter()
+            .chain([&self.build])
+            .fold(Router::new().merge(assets::router()), |router, mount| {
+                mount.add_to(router, self.debug)
+            });
 
         let router = router.fallback_service(app).layer(middleware::from_fn(cross_origin_protection));
         let router = match self.error_page {

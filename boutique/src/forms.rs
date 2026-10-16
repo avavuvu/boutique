@@ -46,7 +46,7 @@ pub async fn single_file(multipart: &mut Multipart, name: &str) -> Result<Upload
             Ok(Some(field)) => field,
             Ok(None) => return Err(UploadError::Missing),
             Err(error) => {
-                tracing::warn!(field = name, "{error}");
+                tracing::warn!(field = name, %error, "could not read the multipart body");
                 return Err(UploadError::Unreadable);
             }
         };
@@ -57,7 +57,7 @@ pub async fn single_file(multipart: &mut Multipart, name: &str) -> Result<Upload
 
         let file_name = field.file_name().map(str::to_string);
         let bytes = field.bytes().await.map_err(|error| {
-            tracing::warn!(field = name, "{error}");
+            tracing::warn!(field = name, %error, "could not read the uploaded file");
             UploadError::Unreadable
         })?;
 
