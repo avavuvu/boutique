@@ -1,6 +1,3 @@
-#[cfg(feature = "sea-orm")]
-pub mod sea_orm;
-
 use std::{error::Error, fmt, future::Future};
 
 use chrono::{DateTime, Utc};
@@ -9,7 +6,6 @@ pub trait AuthUser: Clone + Send + Sync + 'static {
     type Store: AuthStore<Self>;
 
     fn id(&self) -> &str;
-    fn email(&self) -> &str;
     fn password_hash(&self) -> &str;
 }
 

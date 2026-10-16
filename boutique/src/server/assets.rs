@@ -6,7 +6,26 @@ use std::{
     sync::OnceLock,
 };
 
+use axum::{Router, http::header, response::IntoResponse, routing::get};
 use serde::Deserialize;
+
+pub(crate) const HTMX_PATH: &str = concat!("/boutique/htmx-", env!("BOUTIQUE_HTMX_HASH"), ".js");
+pub(crate) const BUILD_ROUTE: &str = "/build";
+pub(crate) const BUILD_DIR: &str = "public/build";
+
+fn script(body: &'static str) -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        body,
+    )
+}
+
+pub(crate) fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
+    Router::new().route(HTMX_PATH, get(|| async { script(include_str!("../../assets/htmx.js")) }))
+}
 
 #[derive(Deserialize)]
 struct Chunk {
@@ -23,9 +42,9 @@ struct Entry {
     styles: Vec<String>,
 }
 
-pub struct Asset {
-    pub file: String,
-    pub styles: Vec<String>,
+pub(crate) struct Asset {
+    pub(crate) file: String,
+    pub(crate) styles: Vec<String>,
 }
 
 type Entries = HashMap<String, Entry>;
@@ -83,7 +102,7 @@ fn read(path: &Path) -> Result<Entries, ManifestError> {
         .collect())
 }
 
-pub fn init(route: &str, dir: &str, live: bool) -> Result<(), ManifestError> {
+pub(crate) fn init(route: &str, dir: &str, live: bool) -> Result<(), ManifestError> {
     let route = route.trim_end_matches('/').to_string();
     let path = Path::new(dir).join(".vite/manifest.json");
 
@@ -110,7 +129,7 @@ fn asset(route: &str, entry: &Entry) -> Asset {
     }
 }
 
-pub fn entry(name: &str) -> Option<Asset> {
+pub(crate) fn entry(name: &str) -> Option<Asset> {
     let Some(manifest) = MANIFEST.get() else {
         tracing::warn!(entry = name, "asset requested before Server::router initialised the vite manifest");
         return None;

@@ -1,24 +1,19 @@
-pub mod assets;
-pub mod config;
-pub mod cookies;
-pub mod error;
-pub mod extractors;
-pub mod form;
-pub mod htmx;
-pub mod ids;
-pub mod middleware;
-pub mod password;
-pub mod prelude;
-pub mod reset;
-pub mod run;
-pub mod server;
-pub mod session;
-pub mod state;
-pub mod store;
-pub mod views;
+mod auth;
+mod error;
+mod server;
 
 #[cfg(feature = "cloudinary")]
 pub mod cloudinary;
+pub mod forms;
+pub mod htmx;
+pub mod ids;
+pub mod prelude;
+pub mod views;
+
+#[cfg(feature = "sea-orm")]
+pub mod store {
+    pub use crate::auth::sea_orm;
+}
 
 pub use argon2;
 pub use axum;
@@ -30,11 +25,8 @@ pub use maud;
 pub use uuid;
 pub use validator;
 
-pub use assets::manifest::ManifestError;
-pub use config::AuthConfig;
+pub use auth::{
+    AuthConfig, AuthRejection, AuthState, AuthStore, AuthUser, AuthenticatedUser, NewSession, StoreError, password, reset, session,
+};
 pub use error::{AppError, AppResult, ErrorMessage, ErrorReport};
-pub use extractors::AuthenticatedUser;
-pub use run::run;
-pub use server::{Cache, Server};
-pub use state::AuthState;
-pub use store::{AuthStore, AuthUser, NewSession, StoreError};
+pub use server::{Cache, ManifestError, Server, run};

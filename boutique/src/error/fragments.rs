@@ -1,7 +1,7 @@
 use maud::Markup;
 
-use super::partial;
-use crate::{error::ErrorMessage, html};
+use super::ErrorMessage;
+use crate::{html, htmx::partial};
 
 fn field_error(field: &str, text: &str) -> Markup {
     let id = format!("{field}-error");
@@ -13,7 +13,7 @@ fn field_error(field: &str, text: &str) -> Markup {
     )
 }
 
-pub fn messages(messages: &[ErrorMessage]) -> Markup {
+pub(crate) fn messages(messages: &[ErrorMessage]) -> Markup {
     html! {
         @for message in messages {
             @if let Some(field) = &message.field {

@@ -4,12 +4,12 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use crate::{
-    error::AppError,
+use super::{
+    AuthState,
     password::{self, HashError},
-    state::AuthState,
     store::{AuthStore, AuthUser, StoreError},
 };
+use crate::error::AppError;
 
 const TOKEN_TYPE: &str = "password_reset";
 
@@ -150,7 +150,7 @@ mod tests {
     use chrono::{DateTime, Utc};
 
     use super::*;
-    use crate::{config::AuthConfig, store::NewSession};
+    use crate::auth::{AuthConfig, store::NewSession};
 
     #[derive(Clone)]
     struct User {
@@ -167,10 +167,6 @@ mod tests {
 
         fn id(&self) -> &str {
             &self.id
-        }
-
-        fn email(&self) -> &str {
-            &self.email
         }
 
         fn password_hash(&self) -> &str {
@@ -247,7 +243,7 @@ mod tests {
 
     #[test]
     fn expired_token() {
-        let state = state().config(AuthConfig::default().reset_ttl_hours(-1));
+        let state = state().with_config(AuthConfig::default().reset_ttl_hours(-1));
         let token = token_for(&state, &user("alice"));
         assert!(matches!(verify(&state, &token), Err(ResetError::InvalidToken)));
     }

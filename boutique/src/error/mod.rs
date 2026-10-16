@@ -1,13 +1,16 @@
 use std::{borrow::Cow, error::Error, fmt};
 
+mod fragments;
+mod report;
+
 use axum::{
-    extract::FromRequestParts,
-    http::{StatusCode, request::Parts},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use validator::ValidationErrors;
 
-use crate::{htmx::fragments, store::StoreError};
+use crate::auth::StoreError;
+pub use report::ErrorReport;
 
 #[derive(Debug)]
 pub enum AppError {
@@ -43,33 +46,6 @@ impl ErrorMessage {
             field: Some(field.into()),
             text: text.into(),
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ErrorReport {
-    pub status: StatusCode,
-    pub messages: Vec<ErrorMessage>,
-}
-
-impl ErrorReport {
-    pub fn new(status: StatusCode) -> Self {
-        Self {
-            status,
-            messages: Vec::new(),
-        }
-    }
-}
-
-impl<S: Send + Sync> FromRequestParts<S> for ErrorReport {
-    type Rejection = StatusCode;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        parts
-            .extensions
-            .get::<ErrorReport>()
-            .cloned()
-            .ok_or(StatusCode::INTERNAL_SERVER_ERROR)
     }
 }
 

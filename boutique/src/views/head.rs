@@ -1,4 +1,4 @@
-use crate::assets;
+use crate::server::{HTMX_PATH, manifest_entry};
 
 pub struct Head {
     pub title: String,
@@ -66,7 +66,7 @@ impl Head {
     }
 
     pub fn entry(mut self, name: &str) -> Self {
-        let Some(asset) = assets::manifest::entry(name) else {
+        let Some(asset) = manifest_entry(name) else {
             return self;
         };
         self.stylesheets.extend(asset.styles);
@@ -74,7 +74,7 @@ impl Head {
     }
 
     pub fn css(self, name: &str) -> Self {
-        match assets::manifest::entry(name) {
+        match manifest_entry(name) {
             Some(asset) => self.stylesheet(asset.file),
             None => self,
         }
@@ -86,7 +86,7 @@ impl Head {
     }
 
     pub fn htmx(self) -> Self {
-        self.module(assets::HTMX_PATH)
+        self.module(HTMX_PATH)
     }
 
     pub fn seo(mut self, metadata: Metadata) -> Self {

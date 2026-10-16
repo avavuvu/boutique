@@ -1,56 +1,33 @@
+mod assets;
+mod dev;
+mod error_page;
+mod files;
+mod layers;
+
+use std::{convert::Infallible, io};
+
 use axum::{
     Router,
-    body::Body,
-    extract::{Request, State},
+    extract::Request,
     handler::Handler,
-    http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
-    response::{IntoResponse, Redirect, Response},
+    response::Response,
 };
-use percent_encoding::percent_decode_str;
-use std::{convert::Infallible, io, time::Duration};
 use tokio::net::{TcpListener, ToSocketAddrs};
-use tower::{Service, ServiceBuilder};
+use tower::Service;
 use tower_http::{
-    compression::{
-        CompressionLayer, Predicate,
-        predicate::{DefaultPredicate, NotForContentType},
-    },
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
 
-use crate::{
-    assets::{self, manifest::ManifestError},
-    middleware::{cross_origin_protection, error_page},
-};
+pub use assets::ManifestError;
+pub(crate) use assets::{HTMX_PATH, entry as manifest_entry};
+pub use dev::run;
+pub use files::Cache;
+use files::{FilePolicy, files_service};
+use layers::{compression, cross_origin_protection, https_redirect};
 
 type Wrap = Box<dyn FnOnce(Router) -> Router + Send + Sync>;
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Cache {
-    #[default]
-    Revalidate,
-    Immutable,
-    MaxAge(Duration),
-}
-
-impl Cache {
-    fn header_value(self) -> HeaderValue {
-        match self {
-            Cache::Revalidate => HeaderValue::from_static("no-cache"),
-            Cache::Immutable => HeaderValue::from_static("public, max-age=31536000, immutable"),
-            Cache::MaxAge(age) => HeaderValue::try_from(format!("public, max-age={}", age.as_secs())).expect("a valid cache-control value"),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct FilePolicy {
-    cache_control: HeaderValue,
-    debug: bool,
-    hide_dotfiles: bool,
-}
 
 pub struct Server {
     assets: (String, String),
@@ -116,7 +93,7 @@ impl Server {
     {
         self.error_page = Some(Box::new(move |router: Router| {
             router.layer(middleware::from_fn(move |request: Request, next: Next| {
-                error_page(render.clone(), state.clone(), request, next)
+                error_page::error_page(render.clone(), state.clone(), request, next)
             }))
         }));
         self
@@ -133,22 +110,22 @@ impl Server {
         F: Service<Request, Response = Response, Error = Infallible> + Clone + Send + Sync + 'static,
         F::Future: Send + 'static,
     {
-        assets::manifest::init(&self.assets.0, &self.assets.1, self.debug)?;
+        assets::init(&self.assets.0, &self.assets.1, self.debug)?;
 
         let mut router = Router::new().merge(assets::router());
 
         for (route, path, cache) in &self.files {
-            let policy = self.file_policy(*cache, false);
+            let policy = FilePolicy::new(*cache, self.debug, false);
             router = router.route_service(route, files_service(policy, ServeFile::new(path)));
         }
 
         for (route, dir, cache) in &self.static_dirs {
-            let policy = self.file_policy(*cache, false);
+            let policy = FilePolicy::new(*cache, self.debug, false);
             router = router.nest_service(route, files_service(policy, ServeDir::new(dir)));
         }
 
         let (route, dir) = &self.assets;
-        let policy = self.file_policy(Cache::Immutable, true);
+        let policy = FilePolicy::new(Cache::Immutable, self.debug, true);
         router = router.nest_service(route, files_service(policy, ServeDir::new(dir)));
 
         let router = router.fallback_service(app).layer(middleware::from_fn(cross_origin_protection));
@@ -156,7 +133,6 @@ impl Server {
             Some(wrap) => wrap(router),
             None => router,
         };
-
         let router = if self.debug {
             router
         } else {
@@ -164,19 +140,6 @@ impl Server {
         };
 
         Ok(router.layer(compression()).layer(TraceLayer::new_for_http()))
-    }
-
-    fn file_policy(&self, cache: Cache, hide_dotfiles: bool) -> FilePolicy {
-        let cache_control = if self.debug {
-            HeaderValue::from_static("no-store")
-        } else {
-            cache.header_value()
-        };
-        FilePolicy {
-            cache_control,
-            debug: self.debug,
-            hide_dotfiles,
-        }
     }
 
     pub async fn serve<F>(self, app: F, address: impl ToSocketAddrs) -> io::Result<()>
@@ -188,61 +151,4 @@ impl Server {
         let listener = TcpListener::bind(address).await?;
         axum::serve(listener, router.into_make_service()).await
     }
-}
-
-fn compression() -> CompressionLayer<impl Predicate> {
-    CompressionLayer::new().compress_when(
-        DefaultPredicate::new()
-            .and(NotForContentType::const_new("video/"))
-            .and(NotForContentType::const_new("audio/"))
-            .and(NotForContentType::const_new("font/woff")),
-    )
-}
-
-fn files_service<S>(
-    policy: FilePolicy,
-    service: S,
-) -> impl Service<Request, Response = Response, Error = Infallible, Future: Send> + Clone + Send + Sync + 'static
-where
-    S: Service<Request, Error = Infallible> + Clone + Send + Sync + 'static,
-    S::Response: IntoResponse,
-    S::Future: Send + 'static,
-{
-    ServiceBuilder::new()
-        .layer(middleware::from_fn_with_state(policy, file_headers))
-        .service(service)
-}
-
-async fn file_headers(State(policy): State<FilePolicy>, request: Request, next: Next) -> Response {
-    if policy.hide_dotfiles && has_dotfile(request.uri().path()) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    let mut response = next.run(request).await;
-    let status = response.status();
-    if policy.debug || status.is_success() || status == StatusCode::NOT_MODIFIED {
-        response.headers_mut().insert(header::CACHE_CONTROL, policy.cache_control);
-    }
-    response
-}
-
-fn has_dotfile(path: &str) -> bool {
-    let decoded = percent_decode_str(path).decode_utf8_lossy();
-    decoded.split(['/', '\\']).any(|segment| segment.starts_with('.'))
-}
-
-async fn https_redirect(req: Request<Body>, next: Next) -> Response {
-    let is_http = req
-        .headers()
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v == "http")
-        .unwrap_or(false);
-
-    if is_http {
-        let host = req.headers().get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
-        let path = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/");
-        return Redirect::permanent(&format!("https://{host}{path}")).into_response();
-    }
-
-    next.run(req).await
 }

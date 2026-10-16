@@ -1,5 +1,3 @@
-pub mod fragments;
-
 use axum::{
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -24,8 +22,4 @@ pub fn partial(target: &str, content: Markup) -> Markup {
     html! {
         hx-partial hx-target=(target) hx-swap="outerHTML" { (content) }
     }
-}
-
-pub fn oob_only(markup: Markup) -> Response {
-    markup.into_response()
 }

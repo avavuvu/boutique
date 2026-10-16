@@ -1,3 +1,15 @@
+mod cookies;
+mod extract;
+pub mod password;
+pub mod reset;
+#[cfg(feature = "sea-orm")]
+pub mod sea_orm;
+pub mod session;
+mod store;
+
+pub use extract::{AuthRejection, AuthenticatedUser};
+pub use store::{AuthStore, AuthUser, NewSession, StoreError};
+
 #[derive(Clone, Debug)]
 pub struct AuthConfig {
     pub login_url: String,
@@ -44,5 +56,35 @@ impl AuthConfig {
     pub fn reset_ttl_hours(mut self, hours: i64) -> Self {
         self.reset_ttl_hours = hours;
         self
+    }
+}
+
+#[derive(Clone)]
+pub struct AuthState<U: AuthUser> {
+    store: U::Store,
+    secret: String,
+    config: AuthConfig,
+}
+
+impl<U: AuthUser> AuthState<U> {
+    pub fn new(store: U::Store, secret: impl Into<String>) -> Self {
+        Self {
+            store,
+            secret: secret.into(),
+            config: AuthConfig::default(),
+        }
+    }
+
+    pub fn with_config(mut self, config: AuthConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn config(&self) -> &AuthConfig {
+        &self.config
+    }
+
+    fn secret(&self) -> &[u8] {
+        self.secret.as_bytes()
     }
 }

@@ -1,9 +1,9 @@
 use axum_extra::extract::cookie::{Cookie, SameSite};
 use time::Duration;
 
-use crate::config::AuthConfig;
+use super::AuthConfig;
 
-pub const SESSION: &str = "session";
+pub(crate) const SESSION: &str = "session";
 
 fn with_domain(mut cookie: Cookie<'static>, config: &AuthConfig) -> Cookie<'static> {
     if let Some(domain) = &config.cookie_domain {
@@ -12,7 +12,7 @@ fn with_domain(mut cookie: Cookie<'static>, config: &AuthConfig) -> Cookie<'stat
     cookie
 }
 
-pub fn make(key: &str, value: String, duration_hrs: i64, config: &AuthConfig) -> Cookie<'static> {
+pub(crate) fn make(key: &str, value: String, duration_hrs: i64, config: &AuthConfig) -> Cookie<'static> {
     let cookie = Cookie::build((key.to_string(), value))
         .path("/")
         .http_only(true)
@@ -24,7 +24,7 @@ pub fn make(key: &str, value: String, duration_hrs: i64, config: &AuthConfig) ->
     with_domain(cookie, config)
 }
 
-pub fn remove(key: &str, config: &AuthConfig) -> Cookie<'static> {
+pub(crate) fn remove(key: &str, config: &AuthConfig) -> Cookie<'static> {
     let cookie = Cookie::build((key.to_string(), String::new())).path("/").build();
     with_domain(cookie, config)
 }

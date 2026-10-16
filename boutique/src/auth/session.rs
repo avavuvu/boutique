@@ -6,13 +6,11 @@ pub use axum_extra::extract::cookie::CookieJar;
 use chrono::Utc;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    cookies,
-    error::AppError,
-    password,
-    state::AuthState,
+use super::{
+    AuthState, cookies, password,
     store::{AuthStore, AuthUser, NewSession, StoreError},
 };
+use crate::error::AppError;
 
 #[derive(Debug)]
 pub enum LoginError {
