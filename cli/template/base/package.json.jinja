@@ -1,0 +1,21 @@
+{
+    "name": "{{ name }}",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "concurrently -n vite,dx -c cyan,yellow \"vite build --watch\" \"dx serve --hot-patch --features local\"",
+        "build": "vite build",
+        "typecheck": "tsc",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@stylistic/eslint-plugin": "^5.10.0",
+        "concurrently": "^10.0.3",
+        "eslint": "^10.13.0",
+        "typescript": "~6.0.3",
+        "typescript-eslint": "^8.71.2",
+        "vite": "^7.3.3"
+    }
+}

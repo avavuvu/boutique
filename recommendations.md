@@ -862,7 +862,7 @@ The config is written whether or not the app uses the kit. The packages it impor
 **Risks:** an app's lint changes when boutique's rules change, on upgrade. That is the point; pin boutique to delay it.
 
 ### 12.2 Template
-**Status:** Planned.
+**Status:** Done. `cli/template/{base,database,accounts}`. The database add-on also adds `GET /health`, which pings the database. `boutique::password::hash_off_runtime` is now public so sign-up hashes off the async runtime. Checked by running the accounts app against a local Postgres: sign up, a duplicate email and a short password (field errors), sign out, a wrong password, sign in, and a cross-origin POST (403).
 
 A base app and add-ons in `cli/template/`, embedded in the CLI binary.
 

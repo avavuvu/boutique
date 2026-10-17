@@ -1,0 +1,32 @@
+use std::env;
+
+#[derive(Clone)]
+pub struct Config {
+    pub port: String,
+{% if database %}
+    pub database_url: String,
+{% endif %}
+{% if accounts %}
+    pub secret_key: String,
+{% endif %}
+}
+
+impl Config {
+    pub fn from_env() -> Self {
+        Self {
+            port: env::var("PORT").unwrap_or_else(|_| "3000".to_string()),
+{% if database %}
+            database_url: required("DATABASE_URL"),
+{% endif %}
+{% if accounts %}
+            secret_key: required("SECRET_KEY"),
+{% endif %}
+        }
+    }
+}
+{% if database %}
+
+fn required(name: &str) -> String {
+    env::var(name).unwrap_or_else(|_| panic!("{name} must be set"))
+}
+{% endif %}

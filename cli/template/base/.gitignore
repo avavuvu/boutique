@@ -1,0 +1,5 @@
+target/
+node_modules/
+public/build/
+.env
+.cargo/config.toml

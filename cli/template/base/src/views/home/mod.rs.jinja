@@ -1,0 +1,27 @@
+use boutique::prelude::{Markup, html};
+
+use crate::components::Counter;
+{% if accounts %}
+use crate::models::user;
+{% endif %}
+use crate::views::layouts::{head, shell};
+
+{% if accounts %}
+pub fn page(user: Option<&user::Model>) -> Markup {
+    shell(
+        head("{{ name }}"),
+        user,
+{% else %}
+pub fn page() -> Markup {
+    shell(
+        head("{{ name }}"),
+{% endif %}
+        html! {
+            section.home.flow {
+                h1 { "{{ name }}" }
+                p { "Edit " code { "src/views/home/mod.rs" } " to get started." }
+                Counter;
+            }
+        },
+    )
+}

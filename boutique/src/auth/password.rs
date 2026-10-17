@@ -28,7 +28,7 @@ pub fn hash(password: &str) -> Result<String, HashError> {
 
 static UNKNOWN_USER_HASH: LazyLock<String> = LazyLock::new(|| hash("unknown user").unwrap_or_default());
 
-pub(crate) async fn hash_off_runtime(password: &str) -> Result<String, HashError> {
+pub async fn hash_off_runtime(password: &str) -> Result<String, HashError> {
     let password = password.to_owned();
     off_runtime(move || hash(&password)).await
 }

@@ -1,0 +1,18 @@
+use sea_orm_migration::prelude::*;
+{% if accounts %}
+
+mod m00000000_000001_users_and_sessions;
+{% endif %}
+
+pub struct Migrator;
+
+#[async_trait::async_trait]
+impl MigratorTrait for Migrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+{% if accounts %}
+        vec![Box::new(m00000000_000001_users_and_sessions::Migration)]
+{% else %}
+        Vec::new()
+{% endif %}
+    }
+}

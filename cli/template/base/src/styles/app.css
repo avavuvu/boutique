@@ -1,0 +1,21 @@
+@layer app {
+    .site-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+        border-bottom: var(--border-width) solid var(--color-border);
+    }
+
+    .site-name {
+        color: inherit;
+        font-weight: bold;
+        text-decoration: none;
+    }
+
+    .site-main {
+        padding: 3rem 1.5rem;
+    }
+}

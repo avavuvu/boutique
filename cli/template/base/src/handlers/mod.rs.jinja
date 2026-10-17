@@ -1,0 +1,7 @@
+{% if accounts %}
+pub mod auth;
+{% endif %}
+{% if database %}
+pub mod health;
+{% endif %}
+pub mod home;

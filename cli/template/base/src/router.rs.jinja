@@ -1,0 +1,20 @@
+use boutique::axum::{
+    Router,
+    routing::{get{% if accounts %}, post{% endif %}},
+};
+
+use crate::{handlers::*, state::AppState};
+
+pub fn create(state: AppState) -> Router {
+    Router::new()
+        .route("/", get(home::index))
+{% if database %}
+        .route("/health", get(health::check))
+{% endif %}
+{% if accounts %}
+        .route("/sign-up", get(auth::sign_up_page).post(auth::sign_up))
+        .route("/sign-in", get(auth::sign_in_page).post(auth::sign_in))
+        .route("/sign-out", post(auth::sign_out))
+{% endif %}
+        .with_state(state)
+}

@@ -1,0 +1,28 @@
+[package]
+name = "{{ name }}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+local = ["boutique/devtools"]
+
+[dependencies]
+boutique = { {{ boutique }}{% if database %}, features = ["sea-orm"]{% endif %} }
+dotenvy = "0.15"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+{% if database %}
+sea-orm = { version = "1", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-chrono"] }
+sea-orm-migration = { version = "1", default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls"] }
+{% endif %}
+{% if accounts %}
+serde = { version = "1", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
+{% endif %}
+
+[build-dependencies]
+bq_setups = { {{ setups }} }

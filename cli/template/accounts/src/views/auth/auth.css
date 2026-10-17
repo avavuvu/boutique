@@ -1,0 +1,6 @@
+@layer app {
+    .auth {
+        max-width: 24rem;
+        margin-inline: auto;
+    }
+}

@@ -1,0 +1,6 @@
+@layer app {
+    .home {
+        max-width: 40rem;
+        margin-inline: auto;
+    }
+}

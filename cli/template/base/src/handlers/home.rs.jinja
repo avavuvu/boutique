@@ -1,0 +1,19 @@
+{% if accounts %}
+use boutique::{AuthenticatedUser, prelude::Markup};
+{% else %}
+use boutique::prelude::Markup;
+{% endif %}
+
+{% if accounts %}
+use crate::{models::user, views};
+
+pub async fn index(user: Option<AuthenticatedUser<user::Model>>) -> Markup {
+    views::home::page(user.as_ref().map(|AuthenticatedUser(user)| user))
+}
+{% else %}
+use crate::views;
+
+pub async fn index() -> Markup {
+    views::home::page()
+}
+{% endif %}

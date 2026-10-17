@@ -1,0 +1,23 @@
+@layer app {
+    .counter {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+
+        & button {
+            width: 2.5rem;
+            height: 2.5rem;
+            border: var(--border-width) solid var(--color-border);
+            background: var(--color-surface);
+            color: inherit;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        & output {
+            min-width: 3ch;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+    }
+}

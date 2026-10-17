@@ -1,0 +1,9 @@
+{
+    "extends": "./bindings/boutique/config/tsconfig.json",
+    "compilerOptions": {
+        "paths": {
+            "@setups": ["./bindings/setups.ts"]
+        }
+    },
+    "include": ["src/**/*.ts", "bindings/**/*.ts"]
+}

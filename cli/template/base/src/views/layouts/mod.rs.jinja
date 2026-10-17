@@ -1,0 +1,45 @@
+{% if accounts %}
+use boutique::{
+    components::Button,
+    prelude::{Markup, html},
+    views::{Head, base},
+};
+
+use crate::models::user;
+{% else %}
+use boutique::{
+    prelude::{Markup, html},
+    views::{Head, base},
+};
+{% endif %}
+
+pub fn head(title: &str) -> Head {
+    Head::new(title).entry("site")
+}
+
+{% if accounts %}
+pub fn shell(head: Head, user: Option<&user::Model>, content: Markup) -> Markup {
+{% else %}
+pub fn shell(head: Head, content: Markup) -> Markup {
+{% endif %}
+    base(
+        &head,
+        html! {
+            header.site-header {
+                a.site-name href="/" { "{{ name }}" }
+{% if accounts %}
+                nav.cluster {
+                    @if let Some(user) = user {
+                        span { (user.email) }
+                        Button(post = "/sign-out") { "Sign out" }
+                    } @else {
+                        a href="/sign-in" { "Sign in" }
+                        Button(href = "/sign-up") .primary { "Sign up" }
+                    }
+                }
+{% endif %}
+            }
+            main.site-main { (content) }
+        },
+    )
+}

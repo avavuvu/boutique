@@ -1,0 +1,53 @@
+{% if accounts %}
+use std::time::Duration;
+
+use boutique::{AuthConfig, AuthState, HasAuth, session};
+{% endif %}
+{% if database %}
+use sea_orm::DatabaseConnection;
+{% endif %}
+
+use crate::config::Config;
+{% if accounts %}
+use crate::models::user;
+{% endif %}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Config,
+{% if database %}
+    pub db: DatabaseConnection,
+{% endif %}
+{% if accounts %}
+    pub auth: AuthState<user::Store>,
+{% endif %}
+}
+
+impl AppState {
+{% if database %}
+    pub fn new(config: Config, db: DatabaseConnection) -> Self {
+{% else %}
+    pub fn new(config: Config) -> Self {
+{% endif %}
+{% if accounts %}
+        let auth = AuthState::new(user::Store::new(db.clone()), config.secret_key.clone())
+            .with_config(AuthConfig::default().login_url("/sign-in").secure_cookies(!cfg!(debug_assertions)));
+        session::spawn_cleanup(auth.clone(), Duration::from_secs(60 * 60));
+        Self { config, db, auth }
+{% elif database %}
+        Self { config, db }
+{% else %}
+        Self { config }
+{% endif %}
+    }
+}
+{% if accounts %}
+
+impl HasAuth for AppState {
+    type Store = user::Store;
+
+    fn auth(&self) -> &AuthState<user::Store> {
+        &self.auth
+    }
+}
+{% endif %}
