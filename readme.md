@@ -1,6 +1,26 @@
 # Boutique
 Boutique is a framework for integrating server-side rendered Rust apps with Javascript.
 
+## Creating an app
+Install the CLI from a boutique checkout and create an app:
+
+```sh
+cargo install --path cli
+cargo bq new my-app
+```
+
+It asks which add-ons to include, or takes them as flags:
+
+| Flag | Adds |
+|---|---|
+| `--database` | sea-orm with Postgres, migrations in `src/migrations/` run at startup, a `/health` route |
+| `--accounts` | users and sessions, sign up, sign in and sign out (adds `--database`) |
+| `--yes` | no questions; anything not given as a flag is left out |
+
+The app depends on boutique at the commit the CLI was built from, so build the CLI from a pushed commit. `--boutique-path ../boutique` writes path dependencies instead.
+
+`bun run test:template` creates every combination in `target/template/` and checks, lints and builds each.
+
 ## File structure
 ```
 my-app/

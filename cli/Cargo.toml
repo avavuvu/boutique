@@ -1,0 +1,15 @@
+[package]
+name = "cargo-bq"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Boutique's command line: cargo bq new"
+
+[dependencies]
+bq_setups = { path = "../setups" }
+clap = { version = "4", features = ["derive"] }
+cliclack = "0.3"
+include_dir = "0.7"
+minijinja = "2"

@@ -879,7 +879,7 @@ A base app and add-ons in `cli/template/`, embedded in the CLI binary.
 **Not included:** password reset (needs an email provider; a later add-on), SQLite (each backend doubles the combinations), host files (`Procfile`). The house-conventions document stays in the apps.
 
 ### 12.3 `cargo bq new`
-**Status:** Planned.
+**Status:** Done. `cli/` (`cargo-bq`: clap, cliclack, include_dir, minijinja). After rendering it writes `bindings/` with `bq_setups`, so a new app type-checks before its first `cargo build`. With `--yes`, or without a terminal, it asks nothing. Not yet: a CI workflow for `test:template` (boutique has none), and the interactive prompts have only been run without a terminal.
 
 A `cargo-bq` crate in `cli/`, installed with `cargo install`, run as `cargo bq new <name>`.
 - Prompts with cliclack for anything not given as a flag: database (none or Postgres), then accounts (only with a database). Flags: `--database`, `--accounts` (implies `--database`), `--yes` to take the defaults.
