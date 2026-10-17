@@ -848,7 +848,7 @@ Node specs are listed explicitly in `prosemirror/schema.ts`. Text blocks without
 From planning a third app (2026-10-18), which needs a database but no accounts. Supersedes 6 and reorders 8.
 
 ### 12.1 Shared config
-**Status:** Planned.
+**Status:** Done. `assets/files/config/` holds `eslint.js`, `vite.js` (with `vite.d.ts`) and `tsconfig.json`; `bq_assets` now embeds `.js` and `.json`; `bq_setups` writes `config/` with or without the kit. The ESLint and Vite helpers are plain JavaScript, so `tsc` does not check them as app code and they need no Node types. Showroom and crossword still carry their own copies; moving them over is a separate app task.
 
 **Problem:** apps copy ESLint, TypeScript and Vite config from each other. Showroom's ESLint config encodes house conventions (braces, no semicolons, `Array<T>`, arrow functions, `is…` booleans, no abbreviations) that crossword and new apps should follow, and copies drift.
 

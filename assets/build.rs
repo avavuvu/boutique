@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const EXTENSIONS: [&str; 3] = ["rs", "ts", "css"];
+const EXTENSIONS: [&str; 5] = ["rs", "ts", "css", "js", "json"];
 
 fn main() {
     println!("cargo::rerun-if-changed=files");

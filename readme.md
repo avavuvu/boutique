@@ -56,6 +56,37 @@ my-app/
             └─ index.css
 ```
 
+## Shared config
+`bq_setups` writes boutique's ESLint, TypeScript and Vite config to `bindings/boutique/config/`, and apps extend it:
+
+`eslint.config.js`:
+
+```js
+import { boutique } from "./bindings/boutique/config/eslint.js"
+
+export default boutique(import.meta.dirname)
+```
+
+`tsconfig.json`:
+
+```json
+{
+    "extends": "./bindings/boutique/config/tsconfig.json",
+    "compilerOptions": { "paths": { "@setups": ["./bindings/setups.ts"] } },
+    "include": ["src/**/*.ts", "bindings/**/*.ts"]
+}
+```
+
+`vite.config.ts`:
+
+```ts
+import { boutique } from "./bindings/boutique/config/vite"
+
+export default boutique({ site: "src/site.ts" })
+```
+
+The ESLint config enforces braces on every block, no semicolons, `Array<T>`, arrow functions, `is…` boolean names and no abbreviations such as `ctx` or `e`. Add app rules after it. The packages it imports (`eslint`, `typescript-eslint`, `@stylistic/eslint-plugin`, `@eslint/js`, `vite`) are the app's dev dependencies. Boutique upgrades can change lint results.
+
 ## UI kit
 `Button`, `Input` and `Textarea`, with the `password-toggle` setup, are behind boutique's `ui` feature, which is on by default. Depend on `boutique` with `default-features = false` to leave them out.
 

@@ -7,6 +7,7 @@ use std::{
 use crate::Failure;
 
 const RUNTIME_FILE: &str = "setups.ts";
+const CONFIG_DIR: &str = "config/";
 
 pub fn io(path: &Path) -> impl FnOnce(io::Error) -> Failure + '_ {
     move |error| Failure::Io {
@@ -30,7 +31,7 @@ pub fn write_boutique(dir: &Path, kit: bool) -> Result<(), Failure> {
     let mut keep = BTreeSet::new();
     let files = bq_assets::FILES
         .iter()
-        .filter(|(path, _)| !is_rust(path) && (kit || *path == RUNTIME_FILE));
+        .filter(|(path, _)| !is_rust(path) && (kit || *path == RUNTIME_FILE || path.starts_with(CONFIG_DIR)));
     for (path, text) in files {
         let target = dir.join(path);
         if let Some(parent) = target.parent() {
