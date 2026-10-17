@@ -13,6 +13,7 @@ ui = ["bq_components/ui"]
 devtools = ["dep:dioxus-devtools"]
 cloudinary = ["dep:reqwest", "dep:sha1", "dep:url"]
 sea-orm = ["dep:sea-orm"]
+ts = ["dep:ts-rs", "dep:bq_macros"]
 
 [dependencies]
 bq_components.workspace = true
@@ -38,6 +39,8 @@ validator = "0.20"
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["rustls-tls", "multipart", "json"] }
 sha1 = { version = "0.10", optional = true }
 url = { version = "2", optional = true }
+ts-rs = { version = "12", optional = true, features = ["no-serde-warnings"] }
+bq_macros = { workspace = true, optional = true }
 
 [build-dependencies]
 sha2 = "0.10"

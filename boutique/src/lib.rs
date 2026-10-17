@@ -24,6 +24,11 @@ pub use chrono;
 pub use maud;
 pub use validator;
 
+#[cfg(feature = "ts")]
+pub use bq_macros::ts;
+#[cfg(feature = "ts")]
+pub use ts_rs;
+
 pub use auth::{
     AuthConfig, AuthRejection, AuthState, AuthStore, AuthUser, AuthenticatedUser, HasAuth, NewSession, StoreError, password, reset, session,
 };

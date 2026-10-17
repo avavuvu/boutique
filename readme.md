@@ -97,6 +97,19 @@ Only `components.css` and `elements.css` style anything without a class you add 
 
 Put app CSS in `@layer app` or leave it unlayered. Either beats every boutique layer, regardless of specificity, so restyle the kit by overriding tokens or rules rather than copying files.
 
+## TypeScript types
+With the `ts` feature, `#[boutique::ts]` exports a struct or enum to `bindings/types/<Name>.ts` through ts-rs, whose crate boutique re-exports. Export by running the generated tests: `cargo test export_bindings`.
+
+```rust
+#[boutique::ts]
+#[derive(Serialize)]
+pub struct SaveResponse {
+    revision: i32,
+}
+```
+
+The attribute adds `#[derive(TS)]` and `#[ts(export, export_to = "types/")]`; on structs, `Option` fields become `field?: T | null`. Items that derive `Serialize` or `Deserialize` without their own `#[serde(rename_all = ...)]` get `rename_all = "camelCase"`, which also changes their JSON. Per-field `#[ts(...)]` attributes from ts-rs still apply.
+
 ## Setups in client-rendered DOM
 Setups attach to any `bq-setup` element inserted into the document, not only server-rendered ones. That includes elements inside `contenteditable` and DOM owned by an editor, such as ProseMirror node views.
 
