@@ -119,7 +119,7 @@ pub async fn verify_token<S: AuthStore>(state: &AuthState<S>, token: &str) -> Re
 
 pub async fn complete<S: AuthStore>(state: &AuthState<S>, token: &str, new_password: &str) -> Result<S::User, ResetError> {
     let user = verify_token(state, token).await?;
-    let hash = password::hash(new_password).map_err(ResetError::Hash)?;
+    let hash = password::hash_off_runtime(new_password).await.map_err(ResetError::Hash)?;
 
     Ok(state.store.reset_password(user, hash).await.map_err(StoreError::new)?)
 }

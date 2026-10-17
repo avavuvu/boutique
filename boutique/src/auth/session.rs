@@ -70,8 +70,9 @@ pub async fn login<S: AuthStore>(state: &AuthState<S>, email: &str, plain_passwo
 pub async fn authenticate<S: AuthStore>(state: &AuthState<S>, email: &str, plain_password: &str) -> Result<S::User, LoginError> {
     let user = state.store.find_user_by_email(email).await.map_err(StoreError::new)?;
 
+    let is_valid = password::verify_off_runtime(plain_password, user.as_ref().map(|user| user.password_hash())).await;
     match user {
-        Some(user) if password::verify(plain_password, user.password_hash()) => Ok(user),
+        Some(user) if is_valid => Ok(user),
         _ => Err(LoginError::InvalidCredentials),
     }
 }

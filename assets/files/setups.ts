@@ -167,7 +167,7 @@ function parseBindings(attribute: string, value: string): Binding[] {
     });
 }
 
-function isMac(): boolean {
+export function isMac(): boolean {
     return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 }
 

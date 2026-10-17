@@ -1,8 +1,6 @@
 use std::{
     convert::Infallible,
-    pin::pin,
     sync::{Arc, Mutex},
-    task::{Context, Poll, Waker},
 };
 
 use chrono::{DateTime, Utc};
@@ -71,10 +69,7 @@ impl AuthStore for Store {
 }
 
 pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
-    match pin!(future).poll(&mut Context::from_waker(Waker::noop())) {
-        Poll::Ready(output) => output,
-        Poll::Pending => panic!("test store futures are always ready"),
-    }
+    tokio::runtime::Builder::new_current_thread().build().expect("the test runtime could not be built").block_on(future)
 }
 
 pub(crate) fn user(id: &str) -> User {

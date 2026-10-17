@@ -836,10 +836,14 @@ From showroom's music block (2026-10-17). Boutique stays server-first: these ite
 - Behaviour arrives late: a freshly inserted element is inert until its setup loads. Showroom's music node view imports its setup module statically, so the registry's dynamic import resolves from the already-loaded editor chunk.
 - The lifecycle is implicit (a document-wide `MutationObserver`), and the editor may rebuild node DOM. Keep state and async work (lookups, uploads) in the node view; the setup only renders and handles UI events.
 - Two observers watch the editor. `ignoreMutation: true` keeps ProseMirror out of node views; the runtime must never write attributes inside them.
-- Handlers come from server markup only. Elements the setup creates (showroom's link chips) need event delegation from a server-rendered element, because extra handler names fail the generated `Setup` type.
-- Not every node view benefits: showroom's image view stays a plain class.
+- Handlers come from server markup only, so render every element the setup needs in Rust (showroom renders all four music service chips with `@for` and hides the unused ones) rather than creating DOM in the setup.
 
-**Showroom (done):** the music block lives in `src/blocks/music/`: Rust attrs and cleanup rules (`mod.rs`), public card (`card.rs`, `card.css`), editor component (`editor.rs`, `#[component(setup = "music-editor")]`), setup (`index.ts`, the path `bq_setups` registers), node view (`view.ts`), shared context (`handle.ts`), schema spec (`schema.ts`, listed explicitly in `prosemirror/schema.ts` rather than globbed), paste plugin and editor CSS. The email, markdown and plain-text renderers stay central, because each shares helpers across every block.
+**Showroom (done):** each block with editor UI lives in `src/blocks/<block>/`, one boutique component per folder with the component in `mod.rs`:
+- `music/`: attrs and cleanup rules (`mod.rs`), `card/` (public card), `editor/` (`#[component(setup = "music-editor")]`, its setup in `index.ts`, node view in `view.ts`, typed context in `handle.ts`), `lookup/` (the paste notice), plus `schema.ts`, `paste.ts` and `attrs.ts`.
+- `image/`: `editor/` (the image frame and its actions, `#[component(setup = "image-editor")]`), `uploading/` (the upload placeholder), plus `schema.ts` and `upload.ts`.
+- `blocks/view.ts`: a shared `BlockView` for node views (clone the template, `provide` a typed handle with attrs, `set`, `change`, `remove`, status, notices and `onUpdate`, plus the block's own actions; turn dragging off while a field is focused; `stopEvent` for interactive elements). It stays in the app because it depends on ProseMirror.
+
+Node specs are listed explicitly in `prosemirror/schema.ts`. Text blocks without editor UI stay in `schema.ts` and the central renderers, as do the email, markdown and plain-text renderers, which share helpers across every block.
 
 ### 11.3 Live context
 **Status:** Rejected for now. Revisit if a second, non-editor consumer appears.
