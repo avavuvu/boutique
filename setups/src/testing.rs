@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use crate::sources::{self, module_path};
+use crate::{
+    Failure, analyse_sources,
+    sources::{self, module_path},
+};
 
 pub struct Source {
     pub root: usize,
@@ -20,5 +23,10 @@ pub fn analyse(runtime: &str, sources: &[Source]) -> Result<(String, String, Vec
             text: source.text.clone(),
         })
         .collect();
-    crate::analyse_sources(runtime, &sources, None)
+    let strings = |diagnostics: Vec<crate::Diagnostic>| diagnostics.iter().map(ToString::to_string).collect();
+    match analyse_sources(runtime, &sources, None) {
+        Ok(output) => Ok((output.types, output.registry, strings(output.warnings))),
+        Err(Failure::Invalid { errors, .. }) => Err(strings(errors)),
+        Err(failure) => Err(vec![failure.to_string()]),
+    }
 }
