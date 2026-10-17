@@ -114,6 +114,11 @@ function attempt(entry: Waiting): boolean {
         entry.reject(new DOMException(`[bq] the element was removed before "${entry.key.name}" was provided`, "AbortError"));
         return true;
     }
+    const own = provided.get(entry.element);
+    if (own?.has(entry.key)) {
+        entry.resolve(own.get(entry.key));
+        return true;
+    }
     for (let owner = entry.element.parentElement?.closest(`[${ATTRIBUTE}]`); owner; owner = owner.parentElement?.closest(`[${ATTRIBUTE}]`)) {
         const values = provided.get(owner);
         if (values?.has(entry.key)) {

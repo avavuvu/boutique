@@ -96,3 +96,30 @@ Import `style/index.css` first, then any of the optional entries:
 Only `components.css` and `elements.css` style anything without a class you add yourself: `components.css` styles markup the kit renders, and `elements.css` styles bare elements across the whole app. `bq.elements` sits below `bq.components`, so kit classes win over element defaults.
 
 Put app CSS in `@layer app` or leave it unlayered. Either beats every boutique layer, regardless of specificity, so restyle the kit by overriding tokens or rules rather than copying files.
+
+## Setups in client-rendered DOM
+Setups attach to any `bq-setup` element inserted into the document, not only server-rendered ones. That includes elements inside `contenteditable` and DOM owned by an editor, such as ProseMirror node views.
+
+Whoever creates the element can `provide` on its root before inserting it, and the root's own setup can `inject` the value. Descendant setups see it too.
+
+```ts
+import { context, provide } from "../../bindings/boutique/setups";
+
+export const music = context<MusicHandle>("music");
+
+class MusicView implements NodeView {
+    dom: HTMLElement;
+
+    constructor(node: Node, view: EditorView, getPos: () => number | undefined) {
+        const template = document.querySelector<HTMLTemplateElement>("#music-editor")!;
+        this.dom = template.content.firstElementChild!.cloneNode(true) as HTMLElement;
+        provide(this.dom, music, { node, view, getPos });
+    }
+}
+```
+
+The `music-editor` setup then calls `await inject(element, music)`.
+
+Attachment is asynchronous, and lazily loaded setups wait for their module, so the creator must not assume handlers exist yet. Removing the element runs the setup's `disconnect` and aborts its `signal`.
+
+The editor may rebuild its DOM at any time, and the setup with it. Keep long-lived state in the creator, such as the node view, not in the setup.

@@ -2,5 +2,12 @@
     "name": "boutique",
     "version": "0.2.0",
     "private": true,
-    "type": "module"
+    "type": "module",
+    "scripts": {
+        "test:js": "bun test tests/js"
+    },
+    "devDependencies": {
+        "@happy-dom/global-registrator": "^21.0.3",
+        "happy-dom": "^21.0.3"
+    }
 }
