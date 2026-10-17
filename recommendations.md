@@ -23,6 +23,9 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 | Rough edges round 1 | Done: decisions 1–5 below and the bugs listed under "Known rough edges" as of 2026-10-15 |
 | 9.4 | Done |
 | Showroom migration | Done (showroom commits `bf91f7f`…`284b213`); view CSS colocated and ascii background as a component (`f7288bf`…`4005490`) |
+| 11.1 | Done: `#[boutique::ts]` (feature `ts`) over ts-rs; showroom uses it. Running the export from `cargo bq check` is Later (with 8) |
+| 11.2 | Done (`inject` sees values provided on the element itself, JS tests in `tests/js/`, readme section); showroom's music block migrated |
+| 11.3 | Rejected for now |
 
 ### Open decisions from implementation
 
@@ -53,6 +56,7 @@ As of 2026-10-15. Done items are committed on `main`; each commit message starts
 - A component called only through its builder produces `unused import` on the function name, not the alias.
 - `registry.ts` emits one import line per eager setup, even from the same module.
 - `readme.md`'s file tree (`views/lander/lander.rs` + `lander.css`) disagrees with section 5 (`home/mod.rs` + `home.css`).
+- `bun run test:js` runs whichever `bun` is first on `PATH` (an old 1.1.27 here). Run `~/.bun/bin/bun test tests/js`, or fix `PATH`. There is no `@types/bun`, so editors may flag the `bun:test` import.
 
 ### Before showroom or crossword deploys
 
@@ -788,3 +792,58 @@ Split `macros/src/lib.rs` into `crate_path.rs`, `attrs.rs`, `component/{mod,para
 
 ### 10.6 Auth traits (breaking)
 `trait AuthStore { type User: AuthUser; type Error; … }`, `AuthState<S: AuthStore>`, `AuthUser { id, password_hash }`. `UserEntity` no longer duplicates `password_hash` if avoidable. Migrate showroom and crossword (`models/user.rs`, `state.rs`).
+
+## 11. Shared types and client-rendered components
+
+From showroom's music block (2026-10-17). Boutique stays server-first: these items only remove hand-copied glue, they do not add a client framework.
+
+### 11.1 TypeScript types from Rust
+**Status:** Done. Apps use ts-rs through `#[boutique::ts]` (boutique feature `ts`, which re-exports `ts_rs`); boutique builds no generator. Running the export and its diff check from `cargo bq check` is Later, with 8.
+
+**`#[boutique::ts]`** (`bq_macros/src/ts.rs`) on a struct or enum expands to `#[derive(TS)]` and `#[ts(crate = "::boutique::ts_rs", export, export_to = "types/")]`, adding `optional_fields = nullable` on structs. If the item derives `Serialize` or `Deserialize` and has no `#[serde(rename_all = ...)]`, it adds `#[serde(rename_all = "camelCase")]` (single-word names stay lowercase). This changes the wire format, so write an explicit `rename_all` to keep another casing. Per-field `#[ts(...)]` still overrides (`#[ts(optional)]`, `#[ts(optional = false)]`, `#[ts(type = "…")]`).
+
+**Problem:** apps copied serialized Rust shapes into TypeScript by hand (in showroom: the music attrs, the music lookup response, the editor's save request and response, the upload signature). They drift silently.
+
+**Decision:** use ts-rs (`serde-compat`) in the app rather than a generator in `bq_setups`. ts-rs has real type information and years of serde edge cases; a `syn`-based generator would reimplement serde from source and match types by name. The only cost is that export runs through `cargo test`, not `build.rs`.
+
+**Showroom's setup (reference for other apps):**
+- `boutique = { …, features = ["ts"] }`. Boutique's ts-rs dependency enables `no-serde-warnings`: the warnings are for `deserialize_with`, which is correct to ignore, since the types describe what the server sends and stores.
+- `#[boutique::ts]` on each shared type; output in `bindings/types/<Name>.ts`, committed.
+- `bun run types` deletes `bindings/types` and runs `cargo test --bin showroom-web export_bindings`. Use the binary target when shared types live in modules only the binary declares (showroom's handlers). Deleting first removes files for types that no longer exist; ts-rs never deletes.
+- `bun run types:check` fails if the committed bindings are stale.
+- Fields: `Option` fields become `t?: T | null` by default; `#[ts(optional)]` for response fields that are only ever omitted; `#[ts(optional = false)]` for fields always sent as `null`; `#[ts(type = "number")]` for `i64` sent as a JSON number (ts-rs maps `i64` to `bigint`); `#[ts(type = "unknown")]` for `serde_json::Value`.
+
+**Risks:**
+- Types are not validation. `fetch` results are still cast; a stale tab or an undeployed server change still fails at runtime.
+- A request type (deserialize-only, lenient) and a response type have different shapes. Describe the shape the TypeScript side actually handles, and say which with the field attributes above.
+- Forgetting `bun run types` leaves stale types until `types:check` runs. Move shared types into their own crate and export from `build.rs` if that becomes a problem.
+- Values (labels, allowed hosts) are not types and stay duplicated.
+
+### 11.2 Setups inside client-rendered DOM
+**Status:** Done. One runtime change (`inject` checks values provided on the element itself before its ancestors, so a root's own setup can read what its creator provided), four tests in `tests/js/setups.test.ts` (happy-dom, `bun test tests/js`), and a readme section.
+
+**Problem:** showroom's ProseMirror node views (`editor/images/image-view.ts`, `editor/music/music-view.ts`) clone a server-rendered `<template>` and wire it up with `querySelector` and `addEventListener`, so their refs and handlers are untyped and the markup's behaviour lives far from the markup.
+
+**Observation:** the runtime's `MutationObserver` already attaches a setup to any `bq-setup` element inserted into the document and disconnects it on removal. A node view whose template root carries its own setup (`#[component(setup = "…")]`) gets typed refs and handlers with no new API. The node view only clones the template, calls `provide(dom, key, value)` before inserting it, and forwards ProseMirror's `update` through that value.
+
+**Guarantees (tested):**
+- Setups attach inside `contenteditable` and inside elements ProseMirror owns.
+- `provide` on a detached element is visible to `inject` from that element's own setup and its descendants once inserted.
+- Attachment is asynchronous for lazily loaded setups, so the inserting code must not assume handlers exist yet.
+- Removing the element runs `disconnect` and aborts the setup's signal.
+
+**Risks:**
+- Behaviour arrives late: a freshly inserted element is inert until its setup loads. Showroom's music node view imports its setup module statically, so the registry's dynamic import resolves from the already-loaded editor chunk.
+- The lifecycle is implicit (a document-wide `MutationObserver`), and the editor may rebuild node DOM. Keep state and async work (lookups, uploads) in the node view; the setup only renders and handles UI events.
+- Two observers watch the editor. `ignoreMutation: true` keeps ProseMirror out of node views; the runtime must never write attributes inside them.
+- Handlers come from server markup only. Elements the setup creates (showroom's link chips) need event delegation from a server-rendered element, because extra handler names fail the generated `Setup` type.
+- Not every node view benefits: showroom's image view stays a plain class.
+
+**Showroom (done):** the music block lives in `src/blocks/music/`: Rust attrs and cleanup rules (`mod.rs`), public card (`card.rs`, `card.css`), editor component (`editor.rs`, `#[component(setup = "music-editor")]`), setup (`index.ts`, the path `bq_setups` registers), node view (`view.ts`), shared context (`handle.ts`), schema spec (`schema.ts`, listed explicitly in `prosemirror/schema.ts` rather than globbed), paste plugin and editor CSS. The email, markdown and plain-text renderers stay central, because each shares helpers across every block.
+
+### 11.3 Live context
+**Status:** Rejected for now. Revisit if a second, non-editor consumer appears.
+
+**Idea:** a `provide`d value whose consumers are notified when it changes, for setups whose props change after attachment (a node view's attrs).
+
+**Why not:** only showroom's editor needs it, and boutique is server-rendered with client-side glue. Showroom's existing `editorContext.onUpdate(listener, signal)` covers it: the node view's provided value carries the same kind of `onUpdate`. Keep that pattern in the app.
