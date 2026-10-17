@@ -341,6 +341,22 @@ Both apps built their own `icon` and a `<details>` dropdown or menu. Showroom ha
 - Setups use the old `(card, { progress, signal })` signature; the current runtime calls `(element, refs, context)`.
 - `src/views/account/mod.rs` calls `.entry("editor")`, but crossword's `vite.config.ts` defines no `editor` entry, so the call only logs a warning. It shows the cost of string-named entries (see section 5).
 
+### 2.7 Check that each setup's module exports it
+**Status:** Planned.
+
+**Problem:** the registry loads a setup with `import("…/index").then((module) => module.<camelName>)`. If `index.ts` exports the function under another name (a new app's `ascii` component copied from `counter` kept `export const counter`), the runtime gets `undefined` and the page logs `[bq] setup "ascii" failed TypeError: e is not a function`. `bun run typecheck` catches it through the registry's `satisfies`, but Vite only strips types, so `dx serve` and `bun run build` stay quiet.
+
+**Decision:** when `bq_setups` writes the registry, read each setup's `index.ts` and warn (`cargo:warning`, so it shows in `dx serve` and `cargo build`) if it does not export the expected name, naming the file, the expected export and the exports it found:
+
+```
+warning: src/components/ascii/index.ts does not export `ascii` (setup "ascii"); it exports `counter`
+```
+
+- Text-level check, not a TypeScript parser: match `export const <name>`, `export function <name>`, `export { … }` lists (including `as` renames) and `export * from`. On `export *` or anything it cannot read, skip the check rather than warn.
+- A warning, not an error: the registry is still written, and `typecheck` remains the real check.
+- Also warn when the `index.ts` a setup points at does not exist.
+- The runtime's message could name the missing export too (`setup "ascii": module has no export "ascii"`), so the browser error explains itself.
+
 ## 3. Rust API
 
 ### 3.1 Make auth optional on `Server`
