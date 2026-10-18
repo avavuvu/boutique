@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url"
 import js from "@eslint/js"
 import stylistic from "@stylistic/eslint-plugin"
 import { defineConfig, globalIgnores } from "eslint/config"
@@ -28,9 +29,11 @@ const abbreviations = [
     "val",
 ]
 
+const root = fileURLToPath(new URL("../../..", import.meta.url))
+
 const arrowFunctionMessage = "Use an arrow function unless it needs its own `this`, is a generator, or is a class method."
 
-export const boutique = (root) => defineConfig(
+export default defineConfig(
     globalIgnores(["bindings/**", "public/build/**", "node_modules/**", "target/**"]),
     js.configs.recommended,
     tseslint.configs.recommended,

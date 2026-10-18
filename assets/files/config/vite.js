@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 
-export const boutique = (input) => defineConfig({
+export default defineConfig({
     publicDir: false,
     base: "/build/",
     resolve: {
@@ -15,7 +15,7 @@ export const boutique = (input) => defineConfig({
         emptyOutDir: true,
         manifest: true,
         rollupOptions: {
-            input,
+            input: { site: "src/site.ts" },
             output: {
                 entryFileNames: "[name]-[hash].js",
                 chunkFileNames: "[name]-[hash].js",

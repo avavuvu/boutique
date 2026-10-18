@@ -1,3 +1,3 @@
-import { boutique } from "./bindings/boutique/config/vite"
+import boutique from "./bindings/boutique/config/vite"
 
-export default boutique({ site: "src/site.ts" })
+export default boutique

@@ -869,9 +869,9 @@ From planning a third app (2026-10-18), which needs a database but no accounts. 
 **Problem:** apps copy ESLint, TypeScript and Vite config from each other. Showroom's ESLint config encodes house conventions (braces, no semicolons, `Array<T>`, arrow functions, `is…` booleans, no abbreviations) that crossword and new apps should follow, and copies drift.
 
 **Decision:** boutique ships the config in `assets/files/config/`, and `bq_setups` writes it to `bindings/boutique/config/` with the runtime. Apps extend it:
-- `eslint.config.js`: `export default boutique(import.meta.dirname)`, plus app rules after it. The function takes the root for typed linting.
+- `eslint.config.js`: `export default [...boutique, { rules: {} }]`. The shared config is a plain array that finds the project root itself, so the app's file reads like ordinary ESLint and its own rules and overrides go after it.
 - `tsconfig.json`: `"extends": "./bindings/boutique/config/tsconfig.json"`, with the app's `include` and `paths`, which resolve relative to the file that declares them.
-- `vite.config.ts`: `export default boutique({ input: { site: "src/site.ts" } })`, which sets `base`, `outDir`, the manifest, file names, browser targets and the `@setups` alias. This is the start of 7.1.
+- `vite.config.ts`: `export default boutique`, a plain config with `src/site.ts` as the `site` entry, extended with Vite's `mergeConfig`. It sets `base`, `outDir`, the manifest, file names, browser targets and the `@setups` alias. This is the start of 7.1.
 
 The config is written whether or not the app uses the kit. The packages it imports (`eslint`, `typescript-eslint`, `@stylistic/eslint-plugin`, `@eslint/js`, `vite`) stay the app's dev dependencies.
 

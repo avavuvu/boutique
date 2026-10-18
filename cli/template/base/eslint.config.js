@@ -1,3 +1,6 @@
-import { boutique } from "./bindings/boutique/config/eslint.js"
+import boutique from "./bindings/boutique/config/eslint.js"
 
-export default boutique(import.meta.dirname)
+export default [
+    ...boutique,
+    { rules: {} },
+]

@@ -72,9 +72,12 @@ my-app/
 `eslint.config.js`:
 
 ```js
-import { boutique } from "./bindings/boutique/config/eslint.js"
+import boutique from "./bindings/boutique/config/eslint.js"
 
-export default boutique(import.meta.dirname)
+export default [
+    ...boutique,
+    { rules: {} },
+]
 ```
 
 `tsconfig.json`:
@@ -90,12 +93,12 @@ export default boutique(import.meta.dirname)
 `vite.config.ts`:
 
 ```ts
-import { boutique } from "./bindings/boutique/config/vite"
+import boutique from "./bindings/boutique/config/vite"
 
-export default boutique({ site: "src/site.ts" })
+export default boutique
 ```
 
-The ESLint config enforces braces on every block, no semicolons, `Array<T>`, arrow functions, `is…` boolean names and no abbreviations such as `ctx` or `e`. Add app rules after it. The packages it imports (`eslint`, `typescript-eslint`, `@stylistic/eslint-plugin`, `@eslint/js`, `vite`) are the app's dev dependencies. Boutique upgrades can change lint results.
+The ESLint config enforces braces on every block, no semicolons, `Array<T>`, arrow functions, `is…` boolean names and no abbreviations such as `ctx` or `e`. Later entries win, so app rules and overrides go after `...boutique`. The Vite config builds `src/site.ts` as the `site` entry; extend it with Vite's `mergeConfig`. The packages it imports (`eslint`, `typescript-eslint`, `@stylistic/eslint-plugin`, `@eslint/js`, `vite`) are the app's dev dependencies. Boutique upgrades can change lint results.
 
 ## UI kit
 `Button`, `Input` and `Textarea`, with the `password-toggle` setup, are behind boutique's `ui` feature, which is on by default. Depend on `boutique` with `default-features = false` to leave them out.
