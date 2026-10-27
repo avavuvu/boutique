@@ -1,3 +1,5 @@
+use maud::Markup;
+
 use crate::server::{HTMX_PATH, manifest_entry};
 
 #[must_use]
@@ -14,6 +16,7 @@ pub struct Head {
     pub(super) viewport: String,
     pub(super) manifest: Option<String>,
     pub(super) theme_color: Option<String>,
+    pub(super) extra: Vec<Markup>,
 }
 
 impl Head {
@@ -31,7 +34,13 @@ impl Head {
             viewport: "width=device-width, initial-scale=1.0".into(),
             manifest: None,
             theme_color: None,
+            extra: Vec::new(),
         }
+    }
+
+    pub fn head(mut self, markup: Markup) -> Self {
+        self.extra.push(markup);
+        self
     }
 
     pub fn viewport(mut self, content: impl Into<String>) -> Self {

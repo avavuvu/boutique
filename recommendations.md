@@ -1,5 +1,8 @@
 # Boutique recommendations
 
+also todo:
+- add comment to auto generated bindings saying it was made in boutique and not to edit it
+
 Implementation plan for boutique, based on a review of boutique and its two consumer apps. Written for agents implementing it. Read **Working on this** before starting any item.
 
 ## Progress
@@ -902,4 +905,3 @@ A `cargo-bq` crate in `cli/`, installed with `cargo install`, run as `cargo bq n
 - The template is embedded with `include_dir`, so a CLI built from a boutique commit creates projects for that commit. Generated projects depend on boutique by git `rev`: the commit the CLI was built from. A CLI built from an unpushed commit therefore writes a rev the project cannot fetch; it warns when its build tree was dirty.
 - `--boutique-path <dir>` writes path dependencies instead, for checking the template against a local boutique.
 - `bun run test:template` renders every combination into `target/template/` with `--boutique-path .` and runs `bun install`, `cargo check`, `bun run typecheck`, `bun run lint` and `bun run build` in each, with one shared target directory.
-

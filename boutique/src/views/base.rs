@@ -19,7 +19,7 @@ pub fn base(head: &Head, content: Markup) -> Markup {
                     meta name="theme-color" content=(color);
                 }
                 @if let Some(favicon) = &head.favicon {
-                    link rel="icon" type="image/x-icon" href=(favicon);
+                    link rel="icon" href=(favicon);
                 }
                 title { (head.title) }
                 @for (href, mime) in &head.preloads {
@@ -30,6 +30,9 @@ pub fn base(head: &Head, content: Markup) -> Markup {
                 }
                 @if let Some(meta) = &head.metadata {
                     (seo_tags(&head.title, meta))
+                }
+                @for markup in &head.extra {
+                    (markup)
                 }
             }
             body {
